@@ -1,0 +1,96 @@
+{
+  "theme": "light",
+  "theme_strategy": "Hybrid approach. Mobile App (Technician): Light theme forced for maximum outdoor visibility. Desktop Dashboard (Supervisor): Light theme default with dark mode optional for heavy data tables. Use 'The Performance Pro' (Industrial Variant) archetype.",
+  "typography": {
+    "headings": "Manrope",
+    "body": "IBM Plex Sans",
+    "rules": [
+      "No Inter or generic sans for headings.",
+      "H1 max size is text-4xl on mobile, text-5xl on desktop. Ensure tracking-tight for all headings over 32px.",
+      "Labels/Overlines must be uppercase, tiny, wide spacing (tracking-[0.2em]).",
+      "Use IBM Plex Sans for tables, inputs, and checklist items to ensure technical legibility."
+    ]
+  },
+  "colors": {
+    "archetype": "The Performance Pro (Industrial Variant)",
+    "primary": "#0A2540",
+    "secondary": "#007AFF",
+    "background": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "judgment_marks": {
+      "good": "#10B981",
+      "replaced": "#F59E0B",
+      "damage": "#EF4444",
+      "none": "#94A3B8"
+    },
+    "rules": [
+      "Tinted grey rule: no pure black or #808080. Use Slate/blue-grey tones (e.g. Slate-900 for text).",
+      "High contrast for field visibility. Text contrast must pass APCA.",
+      "Never use teal green or teal blue for dashboards.",
+      "Limit the use of primary colors to CTAs. Color in checklists should only be used to indicate status (Judgment marks)."
+    ]
+  },
+  "layouts": {
+    "mobile_app": "Mobile-first responsive. Full width with p-4 or p-6 padding. Large tap targets (min 48px height) for checklist judgment marks. Optical alignment for icons.",
+    "dashboard": "High Density Grid (grid-cols-1 md:grid-cols-4 lg:grid-cols-6). Tight gap (gap-4). Data correlation prioritized.",
+    "spacing_scale": "p-2, p-4, p-6, p-8, p-12",
+    "rules": [
+      "Avoid centering everything. Left align forms, labels, and checklists.",
+      "Use cardless, sharp edge or max 8px radius styles for dashboard widgets.",
+      "Use subgrid or flex for complex list items to maintain alignment across checklist rows."
+    ]
+  },
+  "surfaces": {
+    "forms": "Flat Solid surfaces. NO glassmorphism to prevent visual refraction outdoors.",
+    "dashboard_cards": "Flat background, 1px subtle border (border-border), no shadow by default. Hover adds slight lift.",
+    "headers": "Solid background with hard bottom border. Never fully transparent."
+  },
+  "motion": {
+    "interactions": "Micro-interactions on hover, click, press. Smooth transitions for checklist section expansion/collapse.",
+    "rules": [
+      "Respect prefers-reduced-motion.",
+      "Do NOT use 'transition: all'. Target specific properties (e.g., transition-colors, transition-transform)."
+    ]
+  },
+  "component_instructions": {
+    "checklist_item": "Custom component. Row layout with sequence number, description, location. Below it, a 4-segment toggle for Judgments (✔ Good, ◎ Replaced/Adjusted, ✖ Damage, ▬ None). Must be fat-finger friendly.",
+    "photo_upload": "Use Shadcn customized components. Needs a prominent, easy-to-tap area for taking/uploading multiple point photos per checkpoint.",
+    "signatures": "Digital signature canvas component required at the end of the form for 4 roles.",
+    "pdf_export": "Prominent action button on the detail view to generate the official Fujitec SIR report.",
+    "data_tables": "Use Shadcn Table for Supervisor dashboard. Dense, sortable columns for tracking PO, Inventory, and Maintenance follow-ups.",
+    "tabs": "Use Shadcn tabs for switching between the 6 checklist sections (Elevator Operation, Motor Room, Car, Hoistway, Pit, Others)."
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "installation": "yarn add @phosphor-icons/react",
+    "usage": "Use Phosphor Icons for dense dashboards and industrial tooling, providing a crisp, technical look."
+  },
+  "image_urls": [
+    {
+      "url": "https://images.unsplash.com/photo-1621905251918-48416bd8575a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTJ8MHwxfHNlYXJjaHwxfHxlbGV2YXRvciUyMG1haW50ZW5hbmNlJTIwdGVjaG5pY2lhbnxlbnwwfHx8fDE3ODUyMTA2MDZ8MA&ixlib=rb-4.1.0&q=85",
+      "category": "technician_login_bg",
+      "description": "Technician in hard hat inspecting equipment. Use for login page or onboarding background."
+    },
+    {
+      "url": "https://images.unsplash.com/photo-1551288049-bebda4e38f71?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MjJ8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMGRhc2hib2FyZCUyMGRhdGElMjBjaGFydHN8ZW58MHx8fHwxNzg1MjEwNjA2fDA&ixlib=rb-4.1.0&q=85",
+      "category": "dashboard_placeholder",
+      "description": "Dark analytics dashboard. Use for supervisor login or empty state visuals."
+    }
+  ],
+  "accessibility": {
+    "contrast": "Minimum 4.5:1 for normal text.",
+    "data_testid": "All interactive elements, toggles, signature pads, and form inputs MUST include data-testid attribute (e.g. data-testid='login-button', data-testid='checklist-item-1').",
+    "focus": "Clear focus rings on all form inputs and checklist toggles."
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. Make this UI distinctive, functional, and industrial-grade.",
+    "DO NOT use generic centered layouts or simplistic gradients.",
+    "DO NOT use transparent backgrounds for dropdowns, overlays, or sticky headers.",
+    "NEVER use emojis for icons.",
+    "Create depth through layered design elements with z-index hierarchy, but keep forms flat and highly readable.",
+    "Prioritize Shadcn components customized with Tailwind.",
+    "Use sonner for toast notifications.",
+    "Ensure the layout doesn't break on mobile (crucial for field technicians).",
+    "Include logic or UI for the 1M, 3M, 12M checklist type selection leading to dynamic forms."
+  ]
+}
