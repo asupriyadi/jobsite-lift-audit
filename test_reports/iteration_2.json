@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 2 testing complete. Backend: 12/12 new pytest tests PASS in /app/backend/tests/test_iteration2.py (buildings lookup+search, 100% gating incomplete-submit-400 + draft-ok + full-1M-submit, edit draft + edit-forbidden-after-submit-403 with Indonesian detail, PDF with photo attachment sheet larger than PDF without, google-session invalid=401, spare-part inventory change 200 with sales-denied 403). Existing regression suite: 30/30 PASS. Frontend Playwright: Login page has 'google-login' button ('Masuk dengan Google'); Building autofill works (typing ZEZ3624 then blur populates site_name to 'ST REGIST #LH1'); save-draft still works with incomplete checklist and navigates to detail; edit-inspection button visible on draft (owner) and hidden on approved; /inspections/:id/edit route loads existing header data into wizard fields; admin dashboard + Pengguna nav present. ONE FRONTEND GAP FOUND: on step 4 (Tanda Tangan) the submit-sir button is NOT disabled when checklist is incomplete, and the data-testid='submit-warning' element is MISSING — spec requires both. Backend 400 gating still enforces server-side, and client-side submit() shows a toast, so nothing gets persisted incorrectly, but the UX/spec requirement isn't met.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/inspections/{id}/pdf", "issue": "No auth check — anyone with an inspection UUID can download the PDF (already flagged in iteration 1)."},
+      {"endpoint": "/api/auth/login", "issue": "Rate-limit key uses request.client.host (LB IP behind ingress) — potential global lockout (already flagged in iteration 1)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "NewInspection.jsx (step 4 Signatures/Submit)", "issue": "submit-sir button is NOT disabled when checklist is incomplete. Missing data-testid='submit-warning' element entirely. Spec requires: `disabled={loading || !allFilled}` and a visible warning like <p data-testid=\"submit-warning\">Checklist harus 100% terisi untuk Submit.</p>. Currently gating is only via client toast on click + backend 400.", "selector": "[data-testid=\"submit-sir\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration2_results.xml"
+  ],
+  "action_items": [
+    "In /app/frontend/src/pages/NewInspection.jsx: (1) change submit-sir button `disabled={loading}` to `disabled={loading || !allFilled}`, (2) render a warning element with data-testid='submit-warning' near the submit buttons when !allFilled — e.g. <p data-testid=\"submit-warning\" className=\"text-xs text-red-600\">Checklist belum 100% terisi ({filled}/{items.length}). Submit dinonaktifkan; simpan sebagai draft.</p>."
+  ],
+  "critical_code_review_comments": [
+    "Frontend 100% gating relies on backend 400 + client toast; the spec explicitly asked for a disabled Submit + submit-warning testid. Add both.",
+    "PDF endpoint still lacks auth (unauthenticated GET works). Consider validating Bearer or a signed short-lived URL.",
+    "server.py _notify_spare_change awaits send_email in a for-loop inside the request handler — best-effort, but if Emergent Resend has an outage each PATCH will be delayed by the total timeout. Consider asyncio.gather with per-email try/except or a background task.",
+    "load_buildings only loads if collection is empty; changes to data_buildings.json require manual re-seed.",
+    "google_session mints admin role when email matches OWNER_EMAIL only on first login; if OWNER_EMAIL was originally seeded as admin without password, that is fine, but if an existing non-admin user later becomes owner, role won't upgrade. Consider ensuring role sync."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/test_reports/pytest/iteration2_results.xml"
+  ],
+  "success_rate": {"backend": "100% (42/42)", "frontend": "~90% (all flows work except missing submit-warning + submit disabled)"},
+  "test_credentials": "See /app/memory/test_credentials.md — all 7 seeded roles verified.",
+  "seed_data_creation": "Tests create + clean up ephemeral inspections TEST-GATE-*, TEST-EDIT-001, TEST-PDF-PHOTO, TEST-PDF-NOPHOTO, TEST-SPARE-EMAIL. One dangling frontend-created draft `ST REGIST #LH1 / ZEZ3624 / LH1` (draft, technician) remains from Playwright — safe to leave or main agent may delete.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run backend tests: `cd /app && pytest backend/tests/ -o addopts='' -v`. The iteration 2 file is test_iteration2.py. Frontend gap: NewInspection.jsx step 4 needs disabled submit-sir + submit-warning element. After fixing, verify by loading /inspections/new, filling only header (job=ZEZ3624 auto-fill), loadChecklist(1M), skip to step 4 without any judgment: submit-sir.is_disabled() must be true and page.locator('[data-testid=submit-warning]').count() must be >=1.",
+  "rca of the issue": "The submit-sir gating gap exists because in NewInspection.jsx line 351 the button disable expression is only `disabled={loading}` and there is no <p data-testid=\"submit-warning\"> element rendered. The `allFilled` variable is computed (line 125) but only used inside submit() to short-circuit on click. Fix: bind disabled to `loading || !allFilled` and render the warning when !allFilled just above the buttons (inside the Card at lines 335-357)."
+}

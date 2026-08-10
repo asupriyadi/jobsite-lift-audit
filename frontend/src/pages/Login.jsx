@@ -43,6 +43,12 @@ export default function Login() {
     setPassword(pw);
   };
 
+  const googleLogin = () => {
+    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    const redirectUrl = window.location.origin + "/";
+    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  };
+
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       {/* Left visual */}
@@ -104,6 +110,18 @@ export default function Login() {
               Masuk
             </Button>
           </form>
+
+          <div className="my-4 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-[11px] text-muted-foreground">atau</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <Button type="button" variant="outline" onClick={googleLogin} data-testid="google-login"
+            className="w-full gap-2 border-border">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" className="h-4 w-4" />
+            Masuk dengan Google
+          </Button>
 
           <div className="mt-6">
             <p className="overline mb-2 text-muted-foreground">Akun Demo (klik untuk isi)</p>

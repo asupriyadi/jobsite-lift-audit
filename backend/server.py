@@ -7,6 +7,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import logging
 import uuid
+import json
 import secrets
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Annotated, Any
@@ -14,6 +15,7 @@ from typing import List, Optional, Annotated, Any
 import bcrypt
 import jwt
 import requests
+import httpx
 from bson import ObjectId
 from fastapi import FastAPI, APIRouter, Request, HTTPException, Depends, UploadFile, File, Header, Query
 from fastapi.responses import Response, StreamingResponse
@@ -23,6 +25,7 @@ from pydantic import BaseModel, Field, BeforeValidator, EmailStr
 
 from checklist_data import get_checklist, SECTIONS
 from pdf_report import build_sir_pdf
+from email_service import send_email, spare_change_html
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -44,6 +47,8 @@ APP_NAME = "fujitec-sir"
 storage_key = None
 
 ROLES = ["admin", "technician", "supervisor", "head_maintenance", "sales", "inventory", "customer"]
+OWNER_EMAIL = os.environ.get("OWNER_EMAIL", "").lower()
+AUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
 MIME_TYPES = {
     "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
@@ -254,7 +259,7 @@ async def login(data: LoginInput, request: Request):
         if locked_until and datetime.fromisoformat(locked_until) > datetime.now(timezone.utc):
             raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
     user = await db.users.find_one({"email": email})
-    if not user or not verify_password(data.password, user["password_hash"]):
+    if not user or not user.get("password_hash") or not verify_password(data.password, user["password_hash"]):
         await db.login_attempts.update_one(
             {"identifier": ident},
             {"$inc": {"count": 1},
@@ -270,6 +275,36 @@ async def login(data: LoginInput, request: Request):
 @api_router.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
     return user
+
+
+class GoogleSessionInput(BaseModel):
+    session_id: str
+
+
+@api_router.post("/auth/google-session")
+async def google_session(data: GoogleSessionInput):
+    # Exchange Emergent session_id for profile, then mint our own JWT.
+    try:
+        async with httpx.AsyncClient(timeout=30) as hc:
+            resp = await hc.get(AUTH_SESSION_URL, headers={"X-Session-ID": data.session_id})
+        resp.raise_for_status()
+        profile = resp.json()
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired Google session")
+    email = profile["email"].lower()
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        uid = str(existing["_id"])
+        role = existing["role"]
+    else:
+        role = "admin" if email == OWNER_EMAIL else "technician"
+        doc = {"email": email, "name": profile.get("name", email), "role": role,
+               "picture": profile.get("picture"), "auth_provider": "google", "created_at": now_iso()}
+        res = await db.users.insert_one(doc)
+        uid = str(res.inserted_id)
+    token = create_access_token(uid, email, role)
+    return {"access_token": token, "user": {"id": uid, "email": email,
+            "name": profile.get("name", email), "role": role}}
 
 
 @api_router.post("/auth/logout")
@@ -311,6 +346,28 @@ async def checklist_master(type: str = Query(...), user: dict = Depends(get_curr
 
 
 # ---------------------------------------------------------------------------
+# Buildings (master gedung)
+# ---------------------------------------------------------------------------
+@api_router.get("/buildings")
+async def search_buildings(q: str = Query("", ), user: dict = Depends(get_current_user)):
+    query = {}
+    if q:
+        query = {"$or": [
+            {"job_number": {"$regex": q, "$options": "i"}},
+            {"site_name": {"$regex": q, "$options": "i"}},
+            {"city": {"$regex": q, "$options": "i"}},
+        ]}
+    docs = await db.buildings.find(query, {"_id": 0}).limit(20).to_list(20)
+    return docs
+
+
+@api_router.get("/buildings/lookup")
+async def lookup_building(job_number: str = Query(...), user: dict = Depends(get_current_user)):
+    doc = await db.buildings.find_one({"job_number": {"$regex": f"^{job_number}$", "$options": "i"}}, {"_id": 0})
+    return doc or {}
+
+
+# ---------------------------------------------------------------------------
 # Files / photo upload
 # ---------------------------------------------------------------------------
 @api_router.post("/upload")
@@ -346,6 +403,13 @@ async def download_file(file_id: str, auth: str = Query(None), authorization: st
 # ---------------------------------------------------------------------------
 # Inspections
 # ---------------------------------------------------------------------------
+def _validate_complete(data: InspectionInput):
+    incomplete = [it.no for it in data.items if not it.judgment]
+    if incomplete:
+        raise HTTPException(status_code=400,
+            detail=f"Checklist belum 100% terisi. {len(incomplete)} item belum diberi judgment. Simpan sebagai draft dulu.")
+
+
 def _visible_query(user: dict):
     """Restrict list results by role."""
     if user["role"] in ("admin", "supervisor", "head_maintenance", "sales", "inventory"):
@@ -359,6 +423,8 @@ def _visible_query(user: dict):
 
 @api_router.post("/inspections")
 async def create_inspection(data: InspectionInput, user: dict = Depends(get_current_user)):
+    if data.status == "submitted":
+        _validate_complete(data)
     doc = data.model_dump()
     doc["id"] = str(uuid.uuid4())
     doc["technician_id"] = user["id"]
@@ -407,8 +473,18 @@ async def update_inspection(inspection_id: str, data: InspectionInput, user: dic
     existing = await db.inspections.find_one({"id": inspection_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Inspection not found")
+    # Editing rules: only draft reports may be edited, by owner or admin.
+    is_owner = existing.get("technician_id") == user["id"]
+    if existing.get("status") != "draft" and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Laporan yang sudah dikirim tidak dapat diedit")
+    if not is_owner and user["role"] not in ("admin",):
+        raise HTTPException(status_code=403, detail="Hanya teknisi pembuat yang dapat mengedit draft ini")
+    if data.status == "submitted":
+        _validate_complete(data)
     doc = data.model_dump()
     doc["updated_at"] = now_iso()
+    doc.pop("technician_id", None)
+    doc.pop("technician_name", None)
     await db.inspections.update_one({"id": inspection_id}, {"$set": doc})
     updated = await db.inspections.find_one({"id": inspection_id}, {"_id": 0})
     return updated
@@ -443,7 +519,20 @@ async def inspection_pdf(inspection_id: str, auth: str = Query(None)):
     doc = await db.inspections.find_one({"id": inspection_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
-    pdf_bytes = build_sir_pdf(doc)
+    # Pre-fetch photos for the attachment sheet.
+    photos = {}
+    for it in doc.get("items", []):
+        for p in it.get("points", []):
+            fid = p.get("photo_file_id")
+            if fid and fid not in photos:
+                rec = await db.files.find_one({"id": fid, "is_deleted": False})
+                if rec:
+                    try:
+                        data, _ = get_object(rec["storage_path"])
+                        photos[fid] = data
+                    except Exception:
+                        pass
+    pdf_bytes = build_sir_pdf(doc, photos=photos)
     filename = f"SIR-{doc.get('job_number','report')}-{doc.get('lift_number','')}.pdf"
     return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="{filename}"'})
@@ -497,7 +586,37 @@ async def update_spare_part(inspection_id: str, spare_id: str,
         {"$set": {f"spare_parts.$.{field}": update.value, "updated_at": now_iso()}})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Spare part not found")
+    if field != "note":
+        await _notify_spare_change(inspection_id, spare_id, field, update.value, user["name"])
     return {"ok": True}
+
+
+SPARE_FIELD_LABELS = {
+    "sales_status": "Sales / Penawaran", "customer_po_status": "Customer (PO)",
+    "inventory_status": "Inventory", "maintenance_status": "Maintenance",
+}
+SPARE_VALUE_LABELS = {
+    "pending": "Pending", "offered": "Sudah Ditawarkan", "po_issued": "PO Terbit",
+    "available": "Tersedia", "ordering": "Sedang Dipesan", "no_stock": "Tidak Ada Stok",
+    "discontinued": "Discontinue", "replaced": "Sudah Diganti",
+}
+
+
+async def _notify_spare_change(inspection_id, spare_id, field, value, changed_by):
+    insp = await db.inspections.find_one({"id": inspection_id}, {"_id": 0})
+    if not insp:
+        return
+    sp = next((s for s in insp.get("spare_parts", []) if s.get("id") == spare_id), {})
+    recipients = set()
+    if OWNER_EMAIL:
+        recipients.add(OWNER_EMAIL)
+    async for u in db.users.find({"role": {"$in": ["head_maintenance", "supervisor"]}}, {"email": 1}):
+        recipients.add(u["email"])
+    html = spare_change_html(insp, sp, SPARE_FIELD_LABELS.get(field, field),
+                             SPARE_VALUE_LABELS.get(value, value), changed_by)
+    subject = f"[SIR] Update Spare Part — {sp.get('name','')} @ {insp.get('site_name','')}"
+    for r in recipients:
+        await send_email(r, subject, html)
 
 
 # ---------------------------------------------------------------------------
@@ -547,6 +666,7 @@ async def startup():
         logger.warning(f"index creation: {e}")
     # Seed admin + demo users
     await seed_users()
+    await load_buildings()
     try:
         init_storage()
         logger.info("Storage initialized")
@@ -569,8 +689,28 @@ async def seed_users():
         if not existing:
             await db.users.insert_one({"email": email, "password_hash": hash_password(pw),
                                        "name": name, "role": role, "created_at": now_iso()})
-        elif not verify_password(pw, existing["password_hash"]):
+        elif existing.get("password_hash") and not verify_password(pw, existing["password_hash"]):
             await db.users.update_one({"email": email}, {"$set": {"password_hash": hash_password(pw)}})
+    # Ensure owner (Google) account exists as admin
+    if OWNER_EMAIL and not await db.users.find_one({"email": OWNER_EMAIL}):
+        await db.users.insert_one({"email": OWNER_EMAIL, "name": "Agus Supriyadi",
+                                   "role": "admin", "auth_provider": "google", "created_at": now_iso()})
+
+
+async def load_buildings():
+    try:
+        if await db.buildings.count_documents({}) > 0:
+            return
+        path = ROOT_DIR / "data_buildings.json"
+        if not path.exists():
+            return
+        rows = json.loads(path.read_text(encoding="utf-8"))
+        if rows:
+            await db.buildings.insert_many(rows)
+            await db.buildings.create_index("job_number")
+            logger.info(f"Loaded {len(rows)} buildings")
+    except Exception as e:
+        logger.error(f"load_buildings failed: {e}")
 
 
 @app.on_event("shutdown")

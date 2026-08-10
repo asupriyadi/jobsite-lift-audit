@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import api, { apiError } from "@/lib/api";
 import { CHECKLIST_TYPES, JUDGMENTS } from "@/lib/meta";
 import { Card } from "@/components/ui/card";
@@ -20,6 +20,8 @@ const STEPS = ["Informasi", "Checklist", "Spare Part & Remark", "Tanda Tangan"];
 
 export default function NewInspection() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEdit = !!id;
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [header, setHeader] = useState({
@@ -32,6 +34,40 @@ export default function NewInspection() {
   const [signatures, setSignatures] = useState({
     issued_by: {}, customer: {}, checked_by: {}, approved_by: {},
   });
+
+  useEffect(() => {
+    if (!isEdit) return;
+    api.get(`/inspections/${id}`).then(({ data }) => {
+      if (data.status !== "draft") {
+        toast.error("Laporan sudah dikirim, tidak dapat diedit");
+        navigate(`/inspections/${id}`);
+        return;
+      }
+      setHeader({
+        job_number: data.job_number || "", site_name: data.site_name || "",
+        inspection_date: data.inspection_date || "", time_from: data.time_from || "",
+        time_to: data.time_to || "", serviced_by: data.serviced_by || "",
+        total_units: String(data.total_units ?? ""), lift_number: data.lift_number || "",
+        checklist_type: data.checklist_type || "",
+      });
+      setItems(data.items || []);
+      setGlobalRemark(data.global_remark || "");
+      setSpareParts(data.spare_parts || []);
+      setSignatures(data.signatures || { issued_by: {}, customer: {}, checked_by: {}, approved_by: {} });
+    }).catch(() => toast.error("Gagal memuat laporan"));
+    // eslint-disable-next-line
+  }, [id]);
+
+  const lookupBuilding = async (jn) => {
+    if (!jn || jn.length < 3) return;
+    try {
+      const { data } = await api.get(`/buildings/lookup?job_number=${encodeURIComponent(jn)}`);
+      if (data && data.site_name) {
+        setHeader((h) => ({ ...h, site_name: data.site_name }));
+        toast.success(`Gedung ditemukan: ${data.site_name}`);
+      }
+    } catch (e) { /* ignore */ }
+  };
 
   const sections = [...new Set(items.map((i) => i.section))];
 
@@ -85,7 +121,14 @@ export default function NewInspection() {
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
 
+  const filled = items.filter((i) => i.judgment).length;
+  const allFilled = items.length > 0 && filled === items.length;
+
   const submit = async (asStatus) => {
+    if (asStatus === "submitted" && !allFilled) {
+      toast.error("Checklist harus 100% terisi untuk submit. Simpan sebagai draft saja.");
+      return;
+    }
     setLoading(true);
     try {
       const payload = {
@@ -97,7 +140,9 @@ export default function NewInspection() {
         signatures,
         status: asStatus,
       };
-      const { data } = await api.post("/inspections", payload);
+      const { data } = isEdit
+        ? await api.put(`/inspections/${id}`, payload)
+        : await api.post("/inspections", payload);
       toast.success(asStatus === "draft" ? "Tersimpan sebagai draft" : "Laporan SIR terkirim");
       navigate(`/inspections/${data.id}`);
     } catch (e) {
@@ -107,13 +152,12 @@ export default function NewInspection() {
     }
   };
 
-  const filled = items.filter((i) => i.judgment).length;
 
   return (
     <div className="mx-auto max-w-4xl space-y-5" data-testid="new-inspection">
       <div>
         <p className="overline text-accent">Formulir SIR</p>
-        <h1 className="font-head text-2xl font-extrabold tracking-tight text-primary">Inspeksi Baru</h1>
+        <h1 className="font-head text-2xl font-extrabold tracking-tight text-primary">{isEdit ? "Edit Inspeksi (Draft)" : "Inspeksi Baru"}</h1>
       </div>
 
       {/* Stepper */}
@@ -133,7 +177,13 @@ export default function NewInspection() {
       {step === 0 && (
         <Card className="space-y-5 border-border p-5">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Job Number (Pabrik)" testid="job_number" value={header.job_number} onChange={(v) => setHeader({ ...header, job_number: v })} placeholder="ZEZ3624" />
+            <div>
+              <Label className="text-xs">Job Number (Pabrik)</Label>
+              <Input value={header.job_number} placeholder="ZEZ3624" data-testid="field-job_number"
+                onChange={(e) => setHeader({ ...header, job_number: e.target.value })}
+                onBlur={(e) => lookupBuilding(e.target.value)} className="mt-1" />
+              <p className="mt-1 text-[10px] text-muted-foreground">Nama gedung terisi otomatis dari data master.</p>
+            </div>
             <Field label="Site Name (Nama Gedung)" testid="site_name" value={header.site_name} onChange={(v) => setHeader({ ...header, site_name: v })} />
             <Field label="Tanggal Pemeriksaan" testid="inspection_date" type="date" value={header.inspection_date} onChange={(v) => setHeader({ ...header, inspection_date: v })} />
             <Field label="Nama Teknisi" testid="serviced_by" value={header.serviced_by} onChange={(v) => setHeader({ ...header, serviced_by: v })} />

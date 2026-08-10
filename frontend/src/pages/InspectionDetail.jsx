@@ -6,7 +6,7 @@ import { STATUSES, judgmentByKey, SPARE_FIELDS, spareOptionMeta } from "@/lib/me
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  FilePdf, ArrowLeft, CheckCircle, SealCheck, Trash,
+  FilePdf, ArrowLeft, CheckCircle, SealCheck, Trash, PencilSimple,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -73,6 +73,11 @@ export default function InspectionDetail() {
           <Button variant="outline" onClick={() => window.open(pdfUrl(id), "_blank")} data-testid="export-pdf">
             <FilePdf size={16} className="mr-1.5" /> Export PDF
           </Button>
+          {insp.status === "draft" && (user.id === insp.technician_id || user.role === "admin") && (
+            <Button variant="outline" onClick={() => navigate(`/inspections/${id}/edit`)} data-testid="edit-inspection">
+              <PencilSimple size={16} className="mr-1.5" /> Edit
+            </Button>
+          )}
           {["technician", "supervisor", "head_maintenance", "admin"].includes(user.role) && (
             <Button variant="ghost" size="icon" onClick={del} data-testid="delete-inspection" className="text-red-500">
               <Trash size={16} />

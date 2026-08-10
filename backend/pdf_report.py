@@ -6,7 +6,7 @@ from reportlab.lib import colors
 from reportlab.lib.units import mm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, Paragraph,
-                                Spacer, Image, KeepTogether)
+                                Spacer, Image, KeepTogether, PageBreak)
 
 JUDGMENT_MARK = {"good": "✔", "replaced": "◎", "damage": "✖", "none": "▬", None: ""}
 JUDGMENT_LABEL = {"good": "Good", "replaced": "Replaced/Adjusted",
@@ -34,7 +34,8 @@ def _sig_image(data_url):
         return ""
 
 
-def build_sir_pdf(insp: dict) -> bytes:
+def build_sir_pdf(insp: dict, photos: dict = None) -> bytes:
+    photos = photos or {}
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=12 * mm, bottomMargin=12 * mm,
                             leftMargin=10 * mm, rightMargin=10 * mm)
@@ -134,6 +135,48 @@ def build_sir_pdf(insp: dict) -> bytes:
         ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
     elems.append(KeepTogether([Paragraph("<b>Signatures</b>", st["cellb"]), Spacer(1, 1 * mm), sig_tbl]))
+
+    # ---- Photo attachment sheet ----
+    photo_cells = []
+    for it in insp.get("items", []):
+        for p in it.get("points", []):
+            fid = p.get("photo_file_id")
+            if fid and fid in photos:
+                try:
+                    img = Image(io.BytesIO(photos[fid]), width=54 * mm, height=54 * mm, kind="proportional")
+                    cap = Paragraph(
+                        f"<b>No.{it.get('no')} · Titik {p.get('index')}</b><br/>{p.get('measurement','') or '-'}",
+                        st["small"])
+                    photo_cells.append([img, cap])
+                except Exception:
+                    pass
+
+    if photo_cells:
+        elems.append(PageBreak())
+        elems.append(Paragraph("<b>PT. FUJITEC INDONESIA</b> — LAMPIRAN FOTO PEMERIKSAAN",
+                               ParagraphStyle(name="pt", fontSize=11, leading=14, textColor=NAVY, alignment=1)))
+        elems.append(Spacer(1, 4 * mm))
+        cols = 3
+        grid = []
+        row_img, row_cap = [], []
+        for i, (img, cap) in enumerate(photo_cells):
+            row_img.append(img)
+            row_cap.append(cap)
+            if len(row_img) == cols:
+                grid.append(row_img); grid.append(row_cap)
+                row_img, row_cap = [], []
+        if row_img:
+            while len(row_img) < cols:
+                row_img.append(""); row_cap.append("")
+            grid.append(row_img); grid.append(row_cap)
+        ptbl = Table(grid, colWidths=[62 * mm] * cols)
+        ptbl.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#E2E8F0")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        elems.append(ptbl)
 
     doc.build(elems)
     return buf.getvalue()

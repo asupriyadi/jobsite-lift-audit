@@ -1,5 +1,7 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { useAuth } from "@/context/AuthContext";
 import { Toaster } from "sonner";
 import { AuthProvider } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -12,29 +14,66 @@ import InspectionDetail from "@/pages/InspectionDetail";
 import SpareParts from "@/pages/SpareParts";
 import Users from "@/pages/Users";
 
+function AuthCallback() {
+  const { googleSession } = useAuth();
+  const navigate = useNavigate();
+  const done = useRef(false);
+  useEffect(() => {
+    if (done.current) return;
+    done.current = true;
+    const sid = new URLSearchParams(window.location.hash.replace("#", "")).get("session_id");
+    if (!sid) { navigate("/login", { replace: true }); return; }
+    googleSession(sid)
+      .then(() => navigate("/", { replace: true }))
+      .catch(() => navigate("/login", { replace: true }));
+    // eslint-disable-next-line
+  }, []);
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background">
+      <div className="animate-pulse text-sm text-muted-foreground">Menyelesaikan login Google…</div>
+    </div>
+  );
+}
+
+function RootRoutes() {
+  const location = useLocation();
+  if (location.hash?.includes("session_id=")) return <AuthCallback />;
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route index element={<Dashboard />} />
+        <Route path="inspections" element={<InspectionList />} />
+        <Route
+          path="inspections/new"
+          element={
+            <ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}>
+              <NewInspection />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="inspections/:id/edit"
+          element={
+            <ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}>
+              <NewInspection />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="inspections/:id" element={<InspectionDetail />} />
+        <Route path="spare-parts" element={<SpareParts />} />
+        <Route path="users" element={<ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>} />
+      </Route>
+    </Routes>
+  );
+}
+
 function App() {
   return (
     <AuthProvider>
       <Toaster position="top-center" richColors />
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route index element={<Dashboard />} />
-            <Route path="inspections" element={<InspectionList />} />
-            <Route
-              path="inspections/new"
-              element={
-                <ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}>
-                  <NewInspection />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="inspections/:id" element={<InspectionDetail />} />
-            <Route path="spare-parts" element={<SpareParts />} />
-            <Route path="users" element={<ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>} />
-          </Route>
-        </Routes>
+        <RootRoutes />
       </BrowserRouter>
     </AuthProvider>
   );

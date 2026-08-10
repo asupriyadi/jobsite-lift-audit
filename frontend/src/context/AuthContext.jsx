@@ -8,6 +8,10 @@ export function AuthProvider({ children }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (window.location.hash?.includes("session_id=")) {
+      setReady(true);
+      return; // AuthCallback will handle the Google session exchange
+    }
     const token = localStorage.getItem("sir_token");
     if (!token) {
       setUser(false);
@@ -38,13 +42,20 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const googleSession = async (sessionId) => {
+    const { data } = await api.post("/auth/google-session", { session_id: sessionId });
+    localStorage.setItem("sir_token", data.access_token);
+    setUser(data.user);
+    return data.user;
+  };
+
   const logout = () => {
     localStorage.removeItem("sir_token");
     setUser(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, ready, login, register, logout }}>
+    <AuthContext.Provider value={{ user, ready, login, register, googleSession, logout }}>
       {children}
     </AuthContext.Provider>
   );
