@@ -348,12 +348,17 @@ export default function NewInspection() {
             <Button variant="outline" disabled={loading} onClick={() => submit("draft")} data-testid="save-draft" className="flex-1">
               Simpan Draft
             </Button>
-            <Button disabled={loading} onClick={() => submit("submitted")} data-testid="submit-sir"
+            <Button disabled={loading || !allFilled} onClick={() => submit("submitted")} data-testid="submit-sir"
               className="flex-1 bg-emerald-600 hover:bg-emerald-700">
               {loading ? <SpinnerGap size={16} className="mr-2 animate-spin" /> : <CheckCircle size={16} className="mr-2" />}
               Submit Laporan SIR
             </Button>
           </div>
+          {!allFilled && (
+            <p className="mt-2 text-center text-xs text-amber-600" data-testid="submit-warning">
+              Checklist belum 100% terisi ({filled}/{items.length}). Submit dinonaktifkan — simpan sebagai draft dulu.
+            </p>
+          )}
         </Card>
       )}
 
