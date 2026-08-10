@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 3 testing complete. Backend: 13/13 new pytest tests PASS in /app/backend/tests/test_iteration3.py covering (A) SIR PDF Content-Disposition filename regex 'SIR-YYYYMMDD-<job>-<site>[#unit].pdf' + application/pdf, (B) full SIR status workflow with approved-downgrade rules (technician->checked=403, supervisor->checked=200, supervisor->draft=200, head->approved=200, supervisor cannot downgrade from approved (403), head can downgrade from approved (200)), (C) SIR PATCH /signature — supervisor adds checked_by (200) + persists in GET, technician->approved_by=403, head->approved_by=200, (D) ECR CRUD (create/list/get/edit-draft-ok/edit-after-submit-403/signature role gating supervisor->checker/technician->approver=403/head->approver=200/approved downgrade only head/delete-owner), (E) HOR create with parts_replaced+before/after nulls+parts_handover+parts_returned+signatures fujitec_rep+customer, HOR signature keys, HOR PDF filename 'HOR-YYYYMMDD-...', (F) ECR PDF filename 'ECR-YYYYMMDD-...', (G) invalid report_type=XYZ -> 400. Full regression 55/55 PASS (backend_test.py 30, test_iteration2.py 12, test_iteration3.py 13). Frontend Playwright: technician login OK; nav 'Riwayat SIR' + 'ECR & HOR' present; /reports/new shows 3 chooser cards (choose-SIR/ECR/HOR); ECR form (new-ecr) opens; ecr-job_number 'EX3155' + blur autofills ecr-site_name to 'AQUARIUS MUSIKINDO JAKARTA' (spec is a different site — data seed has EX3155 mapped to Aquarius, so autofill works); fill technician/unit_no/working_details + click ecr-submit lands on /reports/{id} with report-detail; HOR /reports/hor/new opens (new-hor), hor-job_number autofills, hor-replaced-name-0 + hor-replaced-qty-0 + hor-before-0 + hor-after-0 photo upload slots present, hor-save-draft navigates to detail; ReportWorkflow renders for supervisor with status buttons (Tandai Checked / Turunkan ke Draft) and signature pads (Customer/Issuer) for ECR draft. Admin can delete via report-delete. All flows work.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/inspections/{id}/pdf and /api/reports/{id}/pdf", "issue": "No auth check — anyone with UUID can download PDF (carried over from iteration 1)."},
+      {"endpoint": "/api/auth/login", "issue": "Rate-limit key uses request.client.host (LB IP) — potential shared-lockout risk (carried over)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration3_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py: PDF endpoints for both inspections and reports remain public (no Depends(get_current_user)); the `auth` query param is accepted but never validated. Should verify token before streaming.",
+    "std_filename() strips only hyphens from date — if inspection_date is empty/missing, filename becomes e.g. 'SIR--<job>-...' with a double-dash. Consider defaulting to 'unknown' or today's date if missing.",
+    "update_report() in server.py does not run any completeness gating for status='submitted' (unlike update_inspection which validates 100% checklist). If ECR business rules require certain fields to be non-empty at submit, that gating should be moved server-side (currently only client toast).",
+    "ReportWorkflow.canSet allows 'supervisor'/'head_maintenance' to click 'Tandai Checked' when status==='approved'. Frontend will let them click but backend will 403 for supervisor. UX-wise consider hiding the Checked button entirely when status='approved' AND role != head_maintenance/admin.",
+    "NewHOR.jsx submit(): payload spread `{ ...payload, status }` overwrites status; combined with `payload.status` from previous ...f leaves an intermediate — cosmetic but works; consider explicitly setting status once.",
+    "Reports don't have an `inspection_date` — filename uses `report_date`. Confirm date field naming is consistent (spec said YYYYMMDD from the report/inspection date — matches).",
+    "server.py `update_report` accepts arbitrary payload dict — no Pydantic validation; consider a Pydantic ReportInput model to guard against malformed data."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/test_reports/pytest/iteration3_results.xml"
+  ],
+  "success_rate": {"backend": "100% (55/55, incl. 13 iteration-3)", "frontend": "100% (all critical iteration-3 flows verified)"},
+  "test_credentials": "See /app/memory/test_credentials.md — all 7 seeded roles verified.",
+  "seed_data_creation": "Test data prefixed TEST-IT3-* / TEST_ECR_* / TEST_HOR_* is created + auto-deleted during pytest. Frontend Playwright reports were also created + deleted by admin.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `cd /app && pytest backend/tests/ -o addopts='' -v` to re-run the 55-test regression. Iteration 3 file is test_iteration3.py (13 tests). Frontend chooser at /reports/new; ECR form at /reports/ecr/new (data-testid new-ecr with ecr-* fields and ecr-submit/ecr-save-draft); HOR at /reports/hor/new (data-testid new-hor with hor-* fields, hor-before-N / hor-after-N photo slots). ReportWorkflow (data-testid report-workflow) is shared by SIR (InspectionDetail) and reports (ReportDetail) with status-<state> buttons and add-sig-<key>/save-sig-<key>. Building autofill uses job='EX3155' -> 'AQUARIUS MUSIKINDO JAKARTA' (not the ZEZ3624 sample from iteration 2). PDF endpoints remain public.",
+  "rca of the issue": "No new bugs. Two pre-existing minor issues (public PDF endpoints, LB IP rate-limit key) remain from iteration 1 and are documented above but weren't fixed since they are out of iteration-3 scope."
+}

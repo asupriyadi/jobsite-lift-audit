@@ -24,7 +24,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, BeforeValidator, EmailStr
 
 from checklist_data import get_checklist, SECTIONS
-from pdf_report import build_sir_pdf
+from pdf_report import build_sir_pdf, build_ecr_pdf, build_hor_pdf, std_filename
 from email_service import send_email, spare_change_html
 
 # ---------------------------------------------------------------------------
@@ -495,12 +495,54 @@ async def update_status(inspection_id: str, payload: dict, user: dict = Depends(
     status = payload.get("status")
     if status not in ("draft", "submitted", "checked", "approved"):
         raise HTTPException(status_code=400, detail="Invalid status")
-    if status == "checked" and user["role"] not in ("supervisor", "head_maintenance", "admin"):
-        raise HTTPException(status_code=403, detail="Only supervisor can mark as checked")
-    if status == "approved" and user["role"] not in ("head_maintenance", "admin"):
-        raise HTTPException(status_code=403, detail="Only head of maintenance can approve")
+    existing = await db.inspections.find_one({"id": inspection_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Not found")
+    current = existing.get("status", "draft")
+    role = user["role"]
+
+    def allowed():
+        if status == "submitted":
+            return role in ("technician", "supervisor", "head_maintenance", "admin")
+        if status == "approved":
+            return role in ("head_maintenance", "admin")
+        if status in ("checked", "draft"):
+            # downgrade from approved is restricted to head of maintenance
+            if current == "approved":
+                return role in ("head_maintenance", "admin")
+            return role in ("supervisor", "head_maintenance", "admin")
+        return False
+
+    if not allowed():
+        if current == "approved":
+            raise HTTPException(status_code=403, detail="Hanya Kepala Maintenance yang dapat menurunkan status dari Approved")
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang mengubah status ini")
     await db.inspections.update_one({"id": inspection_id}, {"$set": {"status": status, "updated_at": now_iso()}})
     return {"ok": True, "status": status}
+
+
+@api_router.patch("/inspections/{inspection_id}/signature")
+async def add_signature(inspection_id: str, payload: dict, user: dict = Depends(get_current_user)):
+    key = payload.get("key")
+    signature = payload.get("signature") or {}
+    allowed = {
+        "issued_by": ("technician", "supervisor", "head_maintenance", "admin"),
+        "customer": tuple(ROLES),
+        "checked_by": ("supervisor", "head_maintenance", "admin"),
+        "approved_by": ("head_maintenance", "admin"),
+    }
+    if key not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid signature key")
+    if user["role"] not in allowed[key]:
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang menandatangani bagian ini")
+    signature.setdefault("signed_at", now_iso())
+    if not signature.get("name"):
+        signature["name"] = user["name"]
+    res = await db.inspections.update_one(
+        {"id": inspection_id}, {"$set": {f"signatures.{key}": signature, "updated_at": now_iso()}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}
 
 
 @api_router.delete("/inspections/{inspection_id}")
@@ -533,7 +575,8 @@ async def inspection_pdf(inspection_id: str, auth: str = Query(None)):
                     except Exception:
                         pass
     pdf_bytes = build_sir_pdf(doc, photos=photos)
-    filename = f"SIR-{doc.get('job_number','report')}-{doc.get('lift_number','')}.pdf"
+    filename = std_filename("SIR", doc.get("inspection_date"), doc.get("job_number"),
+                            doc.get("site_name"), doc.get("lift_number"))
     return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
@@ -617,6 +660,169 @@ async def _notify_spare_change(inspection_id, spare_id, field, value, changed_by
     subject = f"[SIR] Update Spare Part — {sp.get('name','')} @ {insp.get('site_name','')}"
     for r in recipients:
         await send_email(r, subject, html)
+
+
+# ---------------------------------------------------------------------------
+# Reports: ECR (Call Back) & HOR (Hand Over)
+# ---------------------------------------------------------------------------
+REPORT_TYPES = ("ECR", "HOR")
+
+
+@api_router.post("/reports")
+async def create_report(payload: dict, user: dict = Depends(get_current_user)):
+    rtype = payload.get("report_type")
+    if rtype not in REPORT_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid report_type")
+    payload["id"] = str(uuid.uuid4())
+    payload["technician_id"] = user["id"]
+    payload["technician_name"] = user["name"]
+    payload.setdefault("status", "draft")
+    payload["created_at"] = now_iso()
+    payload["updated_at"] = now_iso()
+    await db.reports.insert_one(payload)
+    payload.pop("_id", None)
+    return payload
+
+
+@api_router.get("/reports")
+async def list_reports(user: dict = Depends(get_current_user),
+                       type: Optional[str] = None, status: Optional[str] = None, q: Optional[str] = None):
+    query = {}
+    if user["role"] == "technician":
+        query["technician_id"] = user["id"]
+    if type:
+        query["report_type"] = type
+    if status:
+        query["status"] = status
+    if q:
+        query["$or"] = [
+            {"site_name": {"$regex": q, "$options": "i"}},
+            {"job_number": {"$regex": q, "$options": "i"}},
+            {"unit_no": {"$regex": q, "$options": "i"}},
+            {"lift_number": {"$regex": q, "$options": "i"}},
+        ]
+    docs = await db.reports.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+
+@api_router.get("/reports/{report_id}")
+async def get_report(report_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.reports.find_one({"id": report_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return doc
+
+
+@api_router.put("/reports/{report_id}")
+async def update_report(report_id: str, payload: dict, user: dict = Depends(get_current_user)):
+    existing = await db.reports.find_one({"id": report_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Report not found")
+    is_owner = existing.get("technician_id") == user["id"]
+    if existing.get("status") != "draft" and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Laporan yang sudah dikirim tidak dapat diedit")
+    if not is_owner and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Hanya teknisi pembuat yang dapat mengedit draft ini")
+    for k in ("id", "technician_id", "technician_name", "created_at", "report_type"):
+        payload.pop(k, None)
+    payload["updated_at"] = now_iso()
+    await db.reports.update_one({"id": report_id}, {"$set": payload})
+    return await db.reports.find_one({"id": report_id}, {"_id": 0})
+
+
+@api_router.patch("/reports/{report_id}/status")
+async def update_report_status(report_id: str, payload: dict, user: dict = Depends(get_current_user)):
+    status = payload.get("status")
+    if status not in ("draft", "submitted", "checked", "approved"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    existing = await db.reports.find_one({"id": report_id})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Not found")
+    current = existing.get("status", "draft")
+    role = user["role"]
+    ok = (
+        (status == "submitted" and role in ("technician", "supervisor", "head_maintenance", "admin")) or
+        (status == "approved" and role in ("head_maintenance", "admin")) or
+        (status in ("checked", "draft") and (
+            (current == "approved" and role in ("head_maintenance", "admin")) or
+            (current != "approved" and role in ("supervisor", "head_maintenance", "admin"))))
+    )
+    if not ok:
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang mengubah status ini")
+    await db.reports.update_one({"id": report_id}, {"$set": {"status": status, "updated_at": now_iso()}})
+    return {"ok": True, "status": status}
+
+
+@api_router.patch("/reports/{report_id}/signature")
+async def add_report_signature(report_id: str, payload: dict, user: dict = Depends(get_current_user)):
+    key = payload.get("key")
+    signature = payload.get("signature") or {}
+    allowed = {
+        "issuer": ("technician", "supervisor", "head_maintenance", "admin"),
+        "customer": tuple(ROLES),
+        "checker": ("supervisor", "head_maintenance", "admin"),
+        "approver": ("head_maintenance", "admin"),
+        "fujitec_rep": ("technician", "supervisor", "head_maintenance", "admin"),
+    }
+    if key not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid signature key")
+    if user["role"] not in allowed[key]:
+        raise HTTPException(status_code=403, detail="Anda tidak berwenang menandatangani bagian ini")
+    signature.setdefault("signed_at", now_iso())
+    if not signature.get("name"):
+        signature["name"] = user["name"]
+    res = await db.reports.update_one({"id": report_id}, {"$set": {f"signatures.{key}": signature, "updated_at": now_iso()}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True}
+
+
+@api_router.delete("/reports/{report_id}")
+async def delete_report(report_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.reports.find_one({"id": report_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Not found")
+    if user["role"] not in ("admin", "supervisor", "head_maintenance") and doc.get("technician_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    await db.reports.delete_one({"id": report_id})
+    return {"ok": True}
+
+
+async def _fetch_photos(file_ids):
+    photos = {}
+    for fid in set([f for f in file_ids if f]):
+        rec = await db.files.find_one({"id": fid, "is_deleted": False})
+        if rec:
+            try:
+                data, _ = get_object(rec["storage_path"])
+                photos[fid] = data
+            except Exception:
+                pass
+    return photos
+
+
+@api_router.get("/reports/{report_id}/pdf")
+async def report_pdf(report_id: str, auth: str = Query(None)):
+    doc = await db.reports.find_one({"id": report_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Not found")
+    rtype = doc.get("report_type")
+    if rtype == "ECR":
+        photos = await _fetch_photos(doc.get("photo_file_ids", []) or [])
+        pdf_bytes = build_ecr_pdf(doc, photos=photos)
+        prefix, unit = "ECR", doc.get("unit_no")
+    else:
+        ids = []
+        for p in doc.get("parts_replaced", []) or []:
+            ids += [p.get("before_photo_file_id"), p.get("after_photo_file_id")]
+        photos = await _fetch_photos(ids)
+        pdf_bytes = build_hor_pdf(doc, photos=photos)
+        prefix, unit = "HOR", doc.get("lift_number")
+    filename = std_filename(prefix, doc.get("report_date"), doc.get("job_number"),
+                            doc.get("site_name"), unit)
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
+                             headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
 
 
 # ---------------------------------------------------------------------------

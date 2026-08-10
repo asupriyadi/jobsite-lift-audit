@@ -230,7 +230,7 @@ export default function NewInspection() {
               <TabsList className="h-auto flex-nowrap justify-start gap-1 bg-transparent p-2">
                 {sections.map((s) => (
                   <TabsTrigger key={s} value={s} data-testid={`tab-${s}`}
-                    className="whitespace-nowrap text-[11px] data-[state=active]:bg-primary data-[state=active]:text-white">
+                    className="whitespace-nowrap text-[11px] data-[state=active]:bg-slate-600 data-[state=active]:text-white">
                     {s}
                   </TabsTrigger>
                 ))}
@@ -241,7 +241,7 @@ export default function NewInspection() {
                 {items.filter((it) => it.section === s).map((it) => (
                   <div key={it.no} className="p-4" data-testid={`checklist-item-${it.no}`}>
                     <div className="mb-2 flex gap-2.5">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary text-[11px] font-bold text-white">{it.no}</span>
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-500 text-[11px] font-bold text-white">{it.no}</span>
                       <div className="min-w-0">
                         <p className="text-sm leading-snug text-slate-700">{it.description}</p>
                         <p className="mt-0.5 overline text-slate-400">{it.section}</p>

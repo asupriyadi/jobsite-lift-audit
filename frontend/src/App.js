@@ -13,6 +13,11 @@ import InspectionList from "@/pages/InspectionList";
 import InspectionDetail from "@/pages/InspectionDetail";
 import SpareParts from "@/pages/SpareParts";
 import Users from "@/pages/Users";
+import NewReportChooser from "@/pages/NewReportChooser";
+import NewECR from "@/pages/NewECR";
+import NewHOR from "@/pages/NewHOR";
+import ReportsList from "@/pages/ReportsList";
+import ReportDetail from "@/pages/ReportDetail";
 
 function AuthCallback() {
   const { googleSession } = useAuth();
@@ -45,6 +50,14 @@ function RootRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="inspections" element={<InspectionList />} />
         <Route
+          path="reports/new"
+          element={
+            <ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}>
+              <NewReportChooser />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="inspections/new"
           element={
             <ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}>
@@ -61,6 +74,12 @@ function RootRoutes() {
           }
         />
         <Route path="inspections/:id" element={<InspectionDetail />} />
+        <Route path="reports" element={<ReportsList />} />
+        <Route path="reports/ecr/new" element={<ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}><NewECR /></ProtectedRoute>} />
+        <Route path="reports/ecr/:id/edit" element={<ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}><NewECR /></ProtectedRoute>} />
+        <Route path="reports/hor/new" element={<ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}><NewHOR /></ProtectedRoute>} />
+        <Route path="reports/hor/:id/edit" element={<ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}><NewHOR /></ProtectedRoute>} />
+        <Route path="reports/:id" element={<ReportDetail />} />
         <Route path="spare-parts" element={<SpareParts />} />
         <Route path="users" element={<ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>} />
       </Route>

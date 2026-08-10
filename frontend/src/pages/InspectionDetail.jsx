@@ -5,10 +5,18 @@ import { useAuth } from "@/context/AuthContext";
 import { STATUSES, judgmentByKey, SPARE_FIELDS, spareOptionMeta } from "@/lib/meta";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import ReportWorkflow from "@/components/ReportWorkflow";
 import {
-  FilePdf, ArrowLeft, CheckCircle, SealCheck, Trash, PencilSimple,
+  FilePdf, ArrowLeft, Trash, PencilSimple,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
+
+const SIR_SIG = [
+  { key: "issued_by", label: "Issued By (Teknisi)", roles: ["technician", "supervisor", "head_maintenance"] },
+  { key: "customer", label: "Customer", roles: ["customer", "technician", "supervisor", "head_maintenance"] },
+  { key: "checked_by", label: "Checked By (Supervisor)", roles: ["supervisor", "head_maintenance"] },
+  { key: "approved_by", label: "Approved (Kepala Maint.)", roles: ["head_maintenance"] },
+];
 
 export default function InspectionDetail() {
   const { id } = useParams();
@@ -25,6 +33,16 @@ export default function InspectionDetail() {
     try {
       await api.patch(`/inspections/${id}/status`, { status });
       toast.success("Status diperbarui");
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Gagal");
+    }
+  };
+
+  const addSignature = async (key, signature) => {
+    try {
+      await api.patch(`/inspections/${id}/signature`, { key, signature });
+      toast.success("Tanda tangan tersimpan");
       load();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Gagal");
@@ -86,24 +104,9 @@ export default function InspectionDetail() {
         </div>
       </div>
 
-      {/* Status actions */}
-      <Card className="flex flex-wrap items-center gap-2 border-border p-3">
-        <span className="text-xs text-muted-foreground">Aksi:</span>
-        {insp.status === "submitted" && ["supervisor", "head_maintenance", "admin"].includes(user.role) && (
-          <Button size="sm" onClick={() => setStatus("checked")} data-testid="mark-checked" className="bg-amber-500 hover:bg-amber-600">
-            <CheckCircle size={14} className="mr-1" /> Tandai Checked
-          </Button>
-        )}
-        {insp.status === "checked" && ["head_maintenance", "admin"].includes(user.role) && (
-          <Button size="sm" onClick={() => setStatus("approved")} data-testid="mark-approved" className="bg-emerald-600 hover:bg-emerald-700">
-            <SealCheck size={14} className="mr-1" /> Approve
-          </Button>
-        )}
-        {insp.status === "draft" && (
-          <Button size="sm" onClick={() => setStatus("submitted")} data-testid="mark-submitted">Submit</Button>
-        )}
-        {insp.status === "approved" && <span className="text-xs font-semibold text-emerald-600">Laporan telah disetujui.</span>}
-      </Card>
+      {/* Status & signature workflow */}
+      <ReportWorkflow status={insp.status} signatures={insp.signatures} user={user}
+        onStatus={setStatus} onSign={addSignature} sigConfig={SIR_SIG} />
 
       {/* Info grid */}
       <Card className="grid grid-cols-2 gap-x-4 gap-y-3 border-border p-5 sm:grid-cols-4">
@@ -127,7 +130,7 @@ export default function InspectionDetail() {
             return (
               <div key={it.no} className="p-4" data-testid={`detail-item-${it.no}`}>
                 <div className="flex items-start gap-2.5">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary text-[11px] font-bold text-white">{it.no}</span>
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-500 text-[11px] font-bold text-white">{it.no}</span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm leading-snug text-slate-700">{it.description}</p>
                     <p className="overline mt-0.5 text-slate-400">{it.section}</p>
