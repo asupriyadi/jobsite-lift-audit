@@ -22,8 +22,11 @@ export const STATUSES = {
 export const ROLE_LABELS = {
   admin: "Administrator",
   technician: "Teknisi",
+  troubleshooter: "Troubleshooter",
   supervisor: "Supervisor",
   head_maintenance: "Kepala Maintenance",
+  admin_staff: "Admin Maintenance Staff",
+  contract_staff: "Kontrak Staff",
   sales: "Sales / Penawaran",
   inventory: "Inventory",
   customer: "Customer",

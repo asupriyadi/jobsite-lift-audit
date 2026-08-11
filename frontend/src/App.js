@@ -18,6 +18,7 @@ import NewECR from "@/pages/NewECR";
 import NewHOR from "@/pages/NewHOR";
 import ReportsList from "@/pages/ReportsList";
 import ReportDetail from "@/pages/ReportDetail";
+import UnitHistory from "@/pages/UnitHistory";
 
 function AuthCallback() {
   const { googleSession } = useAuth();
@@ -80,6 +81,7 @@ function RootRoutes() {
         <Route path="reports/hor/new" element={<ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}><NewHOR /></ProtectedRoute>} />
         <Route path="reports/hor/:id/edit" element={<ProtectedRoute roles={["technician", "supervisor", "head_maintenance", "admin"]}><NewHOR /></ProtectedRoute>} />
         <Route path="reports/:id" element={<ReportDetail />} />
+        <Route path="unit-history" element={<UnitHistory />} />
         <Route path="spare-parts" element={<SpareParts />} />
         <Route path="users" element={<ProtectedRoute roles={["admin"]}><Users /></ProtectedRoute>} />
       </Route>

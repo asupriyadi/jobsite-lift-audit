@@ -8,6 +8,7 @@ load_dotenv(ROOT_DIR / '.env')
 import logging
 import uuid
 import json
+import base64
 import secrets
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Annotated, Any
@@ -20,12 +21,13 @@ from bson import ObjectId
 from fastapi import FastAPI, APIRouter, Request, HTTPException, Depends, UploadFile, File, Header, Query
 from fastapi.responses import Response, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, BeforeValidator, EmailStr
 
 from checklist_data import get_checklist, SECTIONS
 from pdf_report import build_sir_pdf, build_ecr_pdf, build_hor_pdf, std_filename
-from email_service import send_email, spare_change_html
+from email_service import send_email, spare_change_html, daily_summary_html, approval_html
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -36,6 +38,7 @@ db = client[os.environ['DB_NAME']]
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+scheduler = AsyncIOScheduler()
 
 app = FastAPI(title="Fujitec SIR")
 api_router = APIRouter(prefix="/api")
@@ -46,7 +49,8 @@ EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = "fujitec-sir"
 storage_key = None
 
-ROLES = ["admin", "technician", "supervisor", "head_maintenance", "sales", "inventory", "customer"]
+ROLES = ["admin", "technician", "troubleshooter", "supervisor", "head_maintenance",
+         "admin_staff", "contract_staff", "sales", "inventory", "customer"]
 OWNER_EMAIL = os.environ.get("OWNER_EMAIL", "").lower()
 AUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
@@ -149,6 +153,23 @@ def require_roles(*roles):
     return checker
 
 
+def create_pdf_token(resource_id: str) -> str:
+    payload = {"sub": resource_id, "type": "pdf",
+               "exp": datetime.now(timezone.utc) + timedelta(minutes=15)}
+    return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
+def require_pdf_token(auth: str, resource_id: str):
+    if not auth:
+        raise HTTPException(status_code=401, detail="PDF token required")
+    try:
+        p = jwt.decode(auth, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid or expired PDF token")
+    if p.get("type") != "pdf" or p.get("sub") != resource_id:
+        raise HTTPException(status_code=401, detail="Invalid PDF token")
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -188,6 +209,7 @@ class SparePart(BaseModel):
     customer_po_status: str = "pending"  # pending | po_issued
     inventory_status: str = "pending"    # pending | available | ordering | no_stock | discontinued
     maintenance_status: str = "pending"  # pending | replaced
+    after_photo_file_id: Optional[str] = None  # proof photo after replacement
     note: str = ""
 
 
@@ -218,6 +240,7 @@ class InspectionInput(BaseModel):
     global_remark: str = ""
     spare_parts: List[SparePart] = []
     signatures: Signatures = Signatures()
+    customer_email: str = ""
     status: str = "draft"  # draft | submitted | checked | approved
 
 
@@ -440,12 +463,15 @@ async def create_inspection(data: InspectionInput, user: dict = Depends(get_curr
 async def list_inspections(user: dict = Depends(get_current_user),
                            status: Optional[str] = None,
                            checklist_type: Optional[str] = None,
+                           site_name: Optional[str] = None,
                            q: Optional[str] = None):
     query = _visible_query(user)
     if status:
         query["status"] = status
     if checklist_type:
         query["checklist_type"] = checklist_type
+    if site_name:
+        query["site_name"] = site_name
     if q:
         query["$or"] = [
             {"job_number": {"$regex": q, "$options": "i"}},
@@ -458,6 +484,13 @@ async def list_inspections(user: dict = Depends(get_current_user),
         d.pop("items", None)
         d.pop("signatures", None)
     return docs
+
+
+@api_router.get("/inspections/sites")
+async def inspection_sites(user: dict = Depends(get_current_user)):
+    query = _visible_query(user)
+    sites = await db.inspections.distinct("site_name", query)
+    return sorted([s for s in sites if s])
 
 
 @api_router.get("/inspections/{inspection_id}")
@@ -518,6 +551,12 @@ async def update_status(inspection_id: str, payload: dict, user: dict = Depends(
             raise HTTPException(status_code=403, detail="Hanya Kepala Maintenance yang dapat menurunkan status dari Approved")
         raise HTTPException(status_code=403, detail="Anda tidak berwenang mengubah status ini")
     await db.inspections.update_one({"id": inspection_id}, {"$set": {"status": status, "updated_at": now_iso()}})
+    if status == "approved":
+        try:
+            fresh = await db.inspections.find_one({"id": inspection_id}, {"_id": 0})
+            await _send_customer_pdf("SIR", fresh)
+        except Exception as e:
+            logger.error(f"customer email failed: {e}")
     return {"ok": True, "status": status}
 
 
@@ -558,6 +597,7 @@ async def delete_inspection(inspection_id: str, user: dict = Depends(get_current
 
 @api_router.get("/inspections/{inspection_id}/pdf")
 async def inspection_pdf(inspection_id: str, auth: str = Query(None)):
+    require_pdf_token(auth, inspection_id)
     doc = await db.inspections.find_one({"id": inspection_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
@@ -617,7 +657,8 @@ async def update_spare_part(inspection_id: str, spare_id: str,
         "sales_status": ("sales", "supervisor", "head_maintenance", "admin"),
         "customer_po_status": ("customer", "sales", "supervisor", "head_maintenance", "admin"),
         "inventory_status": ("inventory", "supervisor", "head_maintenance", "admin"),
-        "maintenance_status": ("technician", "supervisor", "head_maintenance", "admin"),
+        "maintenance_status": ("technician", "troubleshooter", "supervisor", "head_maintenance", "admin"),
+        "after_photo_file_id": ("technician", "troubleshooter", "supervisor", "head_maintenance", "admin"),
         "note": tuple(ROLES),
     }
     if field not in allowed_by_role:
@@ -629,7 +670,7 @@ async def update_spare_part(inspection_id: str, spare_id: str,
         {"$set": {f"spare_parts.$.{field}": update.value, "updated_at": now_iso()}})
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="Spare part not found")
-    if field != "note":
+    if field in ("sales_status", "customer_po_status", "inventory_status", "maintenance_status"):
         await _notify_spare_change(inspection_id, spare_id, field, update.value, user["name"])
     return {"ok": True}
 
@@ -750,6 +791,12 @@ async def update_report_status(report_id: str, payload: dict, user: dict = Depen
     if not ok:
         raise HTTPException(status_code=403, detail="Anda tidak berwenang mengubah status ini")
     await db.reports.update_one({"id": report_id}, {"$set": {"status": status, "updated_at": now_iso()}})
+    if status == "approved":
+        try:
+            fresh = await db.reports.find_one({"id": report_id}, {"_id": 0})
+            await _send_customer_pdf(fresh.get("report_type"), fresh)
+        except Exception as e:
+            logger.error(f"customer email failed: {e}")
     return {"ok": True, "status": status}
 
 
@@ -803,6 +850,7 @@ async def _fetch_photos(file_ids):
 
 @api_router.get("/reports/{report_id}/pdf")
 async def report_pdf(report_id: str, auth: str = Query(None)):
+    require_pdf_token(auth, report_id)
     doc = await db.reports.find_one({"id": report_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
@@ -823,6 +871,145 @@ async def report_pdf(report_id: str, auth: str = Query(None)):
     return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
                              headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
+
+
+# ---------------------------------------------------------------------------
+# PDF secure tokens, customer email, unit history, excel, daily summary
+# ---------------------------------------------------------------------------
+@api_router.get("/inspections/{inspection_id}/pdf-token")
+async def inspection_pdf_token(inspection_id: str, user: dict = Depends(get_current_user)):
+    if not await db.inspections.find_one({"id": inspection_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"token": create_pdf_token(inspection_id)}
+
+
+@api_router.get("/reports/{report_id}/pdf-token")
+async def report_pdf_token(report_id: str, user: dict = Depends(get_current_user)):
+    if not await db.reports.find_one({"id": report_id}, {"_id": 1}):
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"token": create_pdf_token(report_id)}
+
+
+async def _resolve_customer_email(doc):
+    em = (doc.get("customer_email") or "").strip()
+    if em:
+        return em
+    jn = doc.get("job_number")
+    if jn:
+        b = await db.buildings.find_one({"job_number": {"$regex": f"^{jn}$", "$options": "i"}})
+        if b and b.get("customer_email"):
+            return b["customer_email"]
+    return ""
+
+
+async def _send_customer_pdf(kind, doc):
+    if not doc:
+        return
+    email = await _resolve_customer_email(doc)
+    if not email:
+        return
+    if kind == "SIR":
+        ids = [p.get("photo_file_id") for it in doc.get("items", []) for p in it.get("points", [])]
+        pdf = build_sir_pdf(doc, photos=await _fetch_photos(ids))
+        fn = std_filename("SIR", doc.get("inspection_date"), doc.get("job_number"), doc.get("site_name"), doc.get("lift_number"))
+        label = "Service Inspection Report (SIR)"
+    elif kind == "ECR":
+        pdf = build_ecr_pdf(doc, photos=await _fetch_photos(doc.get("photo_file_ids", []) or []))
+        fn = std_filename("ECR", doc.get("report_date"), doc.get("job_number"), doc.get("site_name"), doc.get("unit_no"))
+        label = "Call Back Report (ECR)"
+    else:
+        ids = []
+        for p in doc.get("parts_replaced", []) or []:
+            ids += [p.get("before_photo_file_id"), p.get("after_photo_file_id")]
+        pdf = build_hor_pdf(doc, photos=await _fetch_photos(ids))
+        fn = std_filename("HOR", doc.get("report_date"), doc.get("job_number"), doc.get("site_name"), doc.get("lift_number"))
+        label = "Hand Over Report (HOR)"
+    attachments = [{"filename": fn, "content": base64.b64encode(pdf).decode()}]
+    await send_email(email, f"[Fujitec] {label} - {doc.get('site_name','')} (Approved)",
+                     approval_html(doc, label), attachments=attachments)
+
+
+@api_router.get("/units/history")
+async def unit_history(job_number: str = Query(...), user: dict = Depends(get_current_user)):
+    rx = {"$regex": f"^{job_number}$", "$options": "i"}
+    insp = await db.inspections.find({"job_number": rx}, {"_id": 0, "items": 0, "signatures": 0}).to_list(500)
+    reps = await db.reports.find({"job_number": rx}, {"_id": 0}).to_list(500)
+    events = []
+    for d in insp:
+        events.append({"kind": "SIR", "id": d["id"], "date": d.get("inspection_date"),
+                       "status": d.get("status"), "technician": d.get("technician_name"),
+                       "detail": f"{d.get('checklist_type','')} · {d.get('site_name','')} · {d.get('lift_number','')}",
+                       "spare_parts": d.get("spare_parts", [])})
+    for d in reps:
+        events.append({"kind": d.get("report_type"), "id": d["id"], "date": d.get("report_date"),
+                       "status": d.get("status"), "technician": d.get("technician_name"),
+                       "detail": f"{d.get('site_name','')} · {d.get('unit_no') or d.get('lift_number','')}"})
+    events.sort(key=lambda x: x.get("date") or "", reverse=True)
+    building = await db.buildings.find_one({"job_number": rx}, {"_id": 0})
+    return {"job_number": job_number, "building": building or {}, "events": events}
+
+
+@api_router.get("/export/excel")
+async def export_excel(user: dict = Depends(get_current_user)):
+    import openpyxl
+    import io as _io
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "SIR"
+    ws.append(["Job Number", "Site", "Lift", "Type", "Date", "Time", "Technician", "Status", "Spare Parts"])
+    for d in await db.inspections.find({}, {"_id": 0}).to_list(5000):
+        sp = "; ".join([f"{s.get('name','')} ({s.get('maintenance_status','')})" for s in d.get("spare_parts", [])])
+        ws.append([d.get("job_number"), d.get("site_name"), d.get("lift_number"), d.get("checklist_type"),
+                   d.get("inspection_date"), f"{d.get('time_from','')}-{d.get('time_to','')}",
+                   d.get("technician_name"), d.get("status"), sp])
+    ws2 = wb.create_sheet("ECR-HOR")
+    ws2.append(["Type", "Job Number", "Site", "Unit", "Date", "Technician", "Status"])
+    for d in await db.reports.find({}, {"_id": 0}).to_list(5000):
+        ws2.append([d.get("report_type"), d.get("job_number"), d.get("site_name"),
+                    d.get("unit_no") or d.get("lift_number"), d.get("report_date"),
+                    d.get("technician_name"), d.get("status")])
+    ws3 = wb.create_sheet("Spare Parts")
+    ws3.append(["Spare Part", "Qty", "Site", "Job/Unit", "Sales", "Customer PO", "Inventory", "Maintenance"])
+    for d in await db.inspections.find({"spare_parts.0": {"$exists": True}}, {"_id": 0}).to_list(5000):
+        for s in d.get("spare_parts", []):
+            ws3.append([s.get("name"), s.get("quantity"), d.get("site_name"),
+                        f"{d.get('job_number','')}/{d.get('lift_number','')}", s.get("sales_status"),
+                        s.get("customer_po_status"), s.get("inventory_status"), s.get("maintenance_status")])
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": 'attachment; filename="fujitec-reports.xlsx"'})
+
+
+async def _pending_spare_rows():
+    docs = await db.inspections.find({"spare_parts.0": {"$exists": True}}, {"_id": 0}).to_list(3000)
+    rows = []
+    for d in docs:
+        for sp in d.get("spare_parts", []):
+            if sp.get("maintenance_status") != "replaced":
+                rows.append({**sp, "site_name": d.get("site_name"), "job_number": d.get("job_number"),
+                             "lift_number": d.get("lift_number")})
+    return rows
+
+
+async def send_daily_summary():
+    rows = await _pending_spare_rows()
+    recipients = set()
+    if OWNER_EMAIL:
+        recipients.add(OWNER_EMAIL)
+    async for u in db.users.find({"role": "head_maintenance"}, {"email": 1}):
+        recipients.add(u["email"])
+    html = daily_summary_html(rows)
+    for r in recipients:
+        await send_email(r, f"[Fujitec SIR] Ringkasan Harian — {len(rows)} spare part pending", html)
+    return len(rows)
+
+
+@api_router.post("/admin/daily-summary")
+async def trigger_daily_summary(user: dict = Depends(require_roles("admin", "head_maintenance"))):
+    n = await send_daily_summary()
+    return {"ok": True, "pending": n}
 
 
 # ---------------------------------------------------------------------------
@@ -878,6 +1065,12 @@ async def startup():
         logger.info("Storage initialized")
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
+    try:
+        scheduler.add_job(send_daily_summary, "cron", hour=7, minute=0, id="daily_summary", replace_existing=True)
+        if not scheduler.running:
+            scheduler.start()
+    except Exception as e:
+        logger.error(f"scheduler start failed: {e}")
 
 
 async def seed_users():
@@ -905,13 +1098,15 @@ async def seed_users():
 
 async def load_buildings():
     try:
-        if await db.buildings.count_documents({}) > 0:
+        existing = await db.buildings.find_one({})
+        if existing and "maintenance_period" in existing:
             return
         path = ROOT_DIR / "data_buildings.json"
         if not path.exists():
             return
         rows = json.loads(path.read_text(encoding="utf-8"))
         if rows:
+            await db.buildings.delete_many({})
             await db.buildings.insert_many(rows)
             await db.buildings.create_index("job_number")
             logger.info(f"Loaded {len(rows)} buildings")
@@ -921,6 +1116,11 @@ async def load_buildings():
 
 @app.on_event("shutdown")
 async def shutdown():
+    try:
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
+    except Exception:
+        pass
     client.close()
 
 

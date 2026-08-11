@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api, { fileUrl } from "@/lib/api";
+import api, { fileUrl, openReportPdf } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { STATUSES } from "@/lib/meta";
 import { Card } from "@/components/ui/card";
@@ -66,7 +66,7 @@ export default function ReportDetail() {
           <p className="text-sm text-muted-foreground">{rep.job_number} · {rep.unit_no || rep.lift_number}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.open(`${API}/reports/${id}/pdf`, "_blank")} data-testid="report-export-pdf"><FilePdf size={16} className="mr-1.5" /> Export PDF</Button>
+          <Button variant="outline" onClick={() => openReportPdf(id)} data-testid="report-export-pdf"><FilePdf size={16} className="mr-1.5" /> Export PDF</Button>
           {rep.status === "draft" && (user.id === rep.technician_id || user.role === "admin") && (
             <Button variant="outline" onClick={() => navigate(editPath)} data-testid="report-edit"><PencilSimple size={16} className="mr-1.5" /> Edit</Button>
           )}

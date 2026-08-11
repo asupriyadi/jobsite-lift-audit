@@ -18,7 +18,7 @@ export default function NewHOR() {
   const [loading, setLoading] = useState(false);
   const [f, setF] = useState({
     report_type: "HOR", site_name: "", lift_number: "", job_number: "",
-    report_date: new Date().toISOString().slice(0, 10), note: "",
+    report_date: new Date().toISOString().slice(0, 10), note: "", customer_email: "",
     parts_replaced: [{ name: "", qty: "", before_photo_file_id: null, after_photo_file_id: null }],
     parts_handover: [], parts_returned: [],
     signatures: { fujitec_rep: {}, customer: {} },
@@ -73,6 +73,7 @@ export default function NewHOR() {
         <div><Label className="text-xs">Building / Site</Label><Input value={f.site_name} data-testid="hor-site_name" onChange={(e) => set("site_name", e.target.value)} className="mt-1" /></div>
         <div><Label className="text-xs">Lift / Unit No</Label><Input value={f.lift_number} data-testid="hor-lift_number" onChange={(e) => set("lift_number", e.target.value)} className="mt-1" placeholder="Escalator L2.1" /></div>
         <div><Label className="text-xs">Tanggal</Label><Input type="date" value={f.report_date} data-testid="hor-report_date" onChange={(e) => set("report_date", e.target.value)} className="mt-1" /></div>
+        <div><Label className="text-xs">Email Customer (opsional)</Label><Input value={f.customer_email} data-testid="hor-customer_email" onChange={(e) => set("customer_email", e.target.value)} className="mt-1" /></div>
       </Card>
 
       <Card className="border-border p-5">

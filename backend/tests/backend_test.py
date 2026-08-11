@@ -257,7 +257,8 @@ def test_upload_and_download_image():
 
 # -------- PDF export --------
 def test_pdf_export():
-    r = requests.get(f"{API}/inspections/{_created_inspection['id']}/pdf", headers=_h("admin"), timeout=60)
+    _tk = requests.get(f"{API}/inspections/{_created_inspection['id']}/pdf-token", headers=_h("admin"), timeout=30).json()["token"]
+    r = requests.get(f"{API}/inspections/{_created_inspection['id']}/pdf?auth={_tk}", timeout=60)
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/pdf")
     assert r.content[:4] == b"%PDF"

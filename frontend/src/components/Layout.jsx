@@ -3,15 +3,16 @@ import { NavLink, useNavigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { ROLE_LABELS } from "@/lib/meta";
 import {
-  SquaresFour, ClipboardText, Plus, Wrench, Users, SignOut, Elevator, FileText,
+  SquaresFour, ClipboardText, Plus, Wrench, Users, SignOut, Elevator, FileText, ClockCounterClockwise,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: SquaresFour, roles: null },
-  { to: "/reports/new", label: "Buat Laporan", icon: Plus, roles: ["technician", "supervisor", "head_maintenance", "admin"] },
+  { to: "/reports/new", label: "Buat Laporan", icon: Plus, roles: ["technician", "troubleshooter", "supervisor", "head_maintenance", "admin"] },
   { to: "/inspections", label: "Riwayat SIR", icon: ClipboardText, roles: null },
   { to: "/reports", label: "ECR & HOR", icon: FileText, roles: null },
+  { to: "/unit-history", label: "Riwayat Unit", icon: ClockCounterClockwise, roles: null },
   { to: "/spare-parts", label: "Spare Part", icon: Wrench, roles: null },
   { to: "/users", label: "Pengguna", icon: Users, roles: ["admin"] },
 ];

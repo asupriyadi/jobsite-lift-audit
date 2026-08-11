@@ -13,6 +13,28 @@ api.interceptors.request.use((config) => {
 export const fileUrl = (fileId) => `${API}/files/${fileId}`;
 export const pdfUrl = (id) => `${API}/inspections/${id}/pdf`;
 
+export async function openInspectionPdf(id) {
+  const { data } = await api.get(`/inspections/${id}/pdf-token`);
+  window.open(`${API}/inspections/${id}/pdf?auth=${data.token}`, "_blank");
+}
+
+export async function openReportPdf(id) {
+  const { data } = await api.get(`/reports/${id}/pdf-token`);
+  window.open(`${API}/reports/${id}/pdf?auth=${data.token}`, "_blank");
+}
+
+export async function downloadExcel() {
+  const res = await api.get(`/export/excel`, { responseType: "blob" });
+  const url = window.URL.createObjectURL(new Blob([res.data]));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "fujitec-reports.xlsx";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 export function apiError(detail) {
   if (detail == null) return "Terjadi kesalahan. Coba lagi.";
   if (typeof detail === "string") return detail;

@@ -67,7 +67,8 @@ def test_sir_pdf_filename_and_type():
     assert r.status_code == 200, r.text
     insp_id = r.json()["id"]
     try:
-        p = requests.get(f"{API}/inspections/{insp_id}/pdf", timeout=60)
+        _t = requests.get(f"{API}/inspections/{insp_id}/pdf-token", headers=_h("technician"), timeout=30).json()["token"]
+        p = requests.get(f"{API}/inspections/{insp_id}/pdf?auth={_t}", timeout=60)
         assert p.status_code == 200
         assert p.headers["content-type"].startswith("application/pdf")
         assert p.content[:4] == b"%PDF"
@@ -271,7 +272,8 @@ def test_ecr_status_approved_downgrade_only_head():
 
 def test_ecr_pdf_filename():
     rid = _ecr_ctx["id"]
-    p = requests.get(f"{API}/reports/{rid}/pdf", timeout=60)
+    _t = requests.get(f"{API}/reports/{rid}/pdf-token", headers=_h("technician"), timeout=30).json()["token"]
+    p = requests.get(f"{API}/reports/{rid}/pdf?auth={_t}", timeout=60)
     assert p.status_code == 200, p.text
     assert p.headers["content-type"].startswith("application/pdf")
     assert p.content[:4] == b"%PDF"
@@ -337,7 +339,8 @@ def test_hor_signature_keys():
 
 def test_hor_pdf_filename():
     rid = _hor_ctx["id"]
-    p = requests.get(f"{API}/reports/{rid}/pdf", timeout=60)
+    _t = requests.get(f"{API}/reports/{rid}/pdf-token", headers=_h("technician"), timeout=30).json()["token"]
+    p = requests.get(f"{API}/reports/{rid}/pdf?auth={_t}", timeout=60)
     assert p.status_code == 200
     assert p.headers["content-type"].startswith("application/pdf")
     cd = p.headers.get("content-disposition", "")

@@ -26,7 +26,7 @@ export default function NewInspection() {
   const [loading, setLoading] = useState(false);
   const [header, setHeader] = useState({
     job_number: "", site_name: "", inspection_date: new Date().toISOString().slice(0, 10),
-    time_from: "", time_to: "", serviced_by: "", total_units: "", lift_number: "", checklist_type: "",
+    time_from: "", time_to: "", serviced_by: "", total_units: "", lift_number: "", checklist_type: "", customer_email: "",
   });
   const [items, setItems] = useState([]);
   const [globalRemark, setGlobalRemark] = useState("");
@@ -191,6 +191,7 @@ export default function NewInspection() {
             <Field label="Waktu Selesai" testid="time_to" type="time" value={header.time_to} onChange={(v) => setHeader({ ...header, time_to: v })} />
             <Field label="Jumlah Total Unit di Jobsite" testid="total_units" type="number" value={header.total_units} onChange={(v) => setHeader({ ...header, total_units: v })} />
             <Field label="Unit yang Diperiksa (Lift No.)" testid="lift_number" value={header.lift_number} onChange={(v) => setHeader({ ...header, lift_number: v })} placeholder="LH1" />
+            <Field label="Email Customer (untuk kirim laporan approved)" testid="customer_email" value={header.customer_email} onChange={(v) => setHeader({ ...header, customer_email: v })} placeholder="opsional" />
           </div>
 
           <div>

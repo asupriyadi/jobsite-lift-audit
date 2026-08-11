@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 4 (FASE 1) fully verified. Backend: created /app/backend/tests/test_iteration4.py with 13 tests, all PASS. Also patched old iteration-1/2/3 PDF tests (backend_test.py::test_pdf_export, test_iteration2.py::test_pdf_with_photo_attachment_larger, test_iteration3.py::test_sir_pdf_filename_and_type/test_ecr_pdf_filename/test_hor_pdf_filename) to use the new /pdf-token flow. Full regression 68/68 PASS (backend_test 30, test_iteration2 12, test_iteration3 13, test_iteration4 13). Coverage: (1) Secure PDF tokens — SIR & Report PDF endpoints without auth return 401; pdf-token returns valid token; ?auth=<token> returns 200 application/pdf; tampered token 401. (2) Daily summary — head/admin POST returns {ok:true, pending:<int>}; technician 403. (3) /inspections/sites lists distinct sites & ?site_name= filters correctly. (4) After-photo — technician PATCH after_photo_file_id ok & persists in GET; inventory role 403. (5) /units/history?job_number=EX3155 returns SIR events + building object. (6) /export/excel returns 200 xlsx (PK header, spreadsheetml.sheet mime, >1KB). (7) Customer email — SIR with customer_email=delivered@resend.dev goes draft→submitted→checked→approved (200) — email best-effort/non-blocking. (8) New roles troubleshooter/admin_staff/contract_staff — admin creates users successfully & each can login. (9) Buildings /buildings/lookup?job_number=EX3155 has_contract=True, maintenance_period='Every Month', spv='SUYANTO'. Frontend Playwright (supervisor): 'Riwayat Unit' nav present; /unit-history unit-job-input + unit-search + unit-building present (searched EX3155 → building card renders); /inspections filter-building (7 options) + export-excel button downloads fujitec-reports.xlsx; /reports reports-export-excel also downloads fujitec-reports.xlsx.",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "/api/auth/login", "issue": "Rate-limit key uses LB/request.client.host — shared-lockout risk (carried over from iteration 1)."}
+  ]},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/backend/tests/test_iteration3.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration4_results.xml",
+    "/app/test_reports/pytest/iteration4_full.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py::require_pdf_token compares p['sub'] to resource_id — correct binding. Consider also checking token 'iss' or storing jti to allow revocation. 15m expiry is reasonable.",
+    "PDF token endpoints only 404 when doc missing, they do NOT verify the caller has visibility of that inspection/report (they rely on get_current_user only). If SIR docs are per-technician private, a supervisor from another site could mint a token. Consider applying _visible_query check.",
+    "/api/export/excel is accessible to any authenticated user (no role gate); may expose data across all sites/tenants. Consider restricting to admin/head_maintenance or filtering by _visible_query.",
+    "/api/units/history job_number lookup is case-insensitive but building.job_number field may be stored uppercase; contract fields lookup relies on regex — fine, but if job_number contains regex metachars it will error. Should re.escape().",
+    "send_daily_summary sends per-recipient in a loop (await inside for); minor — for a large recipient list this serialises. OK for now.",
+    "trigger_daily_summary allows 'head_maintenance' via require_roles(admin, head_maintenance) — matches spec.",
+    "_send_customer_pdf catches nothing; if Resend fails, approve endpoint could 500. server.py::update_status calls it inside try/except? Please confirm — else wrap in try/except to keep approve idempotent. (Tests show 200 for delivered@resend.dev, but a real failure could bubble up.)",
+    "Excel export loads to_list(5000) — no pagination; will grow with data. Consider streaming or capping."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/test_iteration3.py",
+    "/app/test_reports/pytest/iteration4_results.xml",
+    "/app/test_reports/pytest/iteration4_full.xml"
+  ],
+  "success_rate": {"backend": "100% (68/68 total; 13/13 iteration-4)", "frontend": "100% for iteration-4 critical flows (Riwayat Unit page, filter-building, export-excel from /inspections and /reports)"},
+  "test_credentials": "Standard 7 seeded roles from /app/memory/test_credentials.md — all logins verified.",
+  "seed_data_creation": "Test data prefixed TEST-IT4-* and TEST_IT4_<role>_<uuid> created & auto-cleaned via pytest teardowns (inspection & user deletes after each test). No orphans from iteration 4.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run `cd /app && pytest backend/tests/ -o addopts='' -v` for full 68-test regression. Iteration 4 tests live in test_iteration4.py. Note: PDF endpoints now REQUIRE ?auth=<token> — get token via GET /api/inspections/{id}/pdf-token or /api/reports/{id}/pdf-token (Bearer). New roles troubleshooter/admin_staff/contract_staff accepted by /api/users; POST body needs {email,password,name,role}. Buildings master reloaded → EX3155 has has_contract=True/maintenance_period='Every Month'/spv='SUYANTO'. Frontend /unit-history uses data-testid unit-job-input/unit-search/unit-building/unit-event-*. /inspections has filter-building + export-excel; /reports has reports-export-excel; SIR/report detail uses export-pdf which internally fetches pdf-token then window.open(pdf?auth=). Regression tests were updated to add the token step.",
+  "rca of the issue": "No unresolved bugs. Only iteration-4 test-collection bootstrap issues fixed inline: (a) BASE_URL had to fall back to /app/frontend/.env when the shell env var wasn't set in the pytest process, (b) InspectionInput requires serviced_by (not documented in spec), (c) /api/users expects {name,...} rather than full_name, (d) spare-part quantity is a str in the Pydantic model — must pass string not int, (e) there's no POST /api/inspections/{id}/spare-parts; parts are added via PUT /api/inspections/{id}. Pre-existing tests broke because iteration-4 gated /pdf behind a token — updated all 5 old PDF tests to first fetch /pdf-token."
+}

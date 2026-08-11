@@ -26,7 +26,7 @@ export default function NewECR() {
     report_type: "ECR", technician: "", site_name: "", unit_no: "", job_number: "",
     report_date: new Date().toISOString().slice(0, 10), time_from: "", time_to: "",
     working_details: "", ec: "", action: "", cause: "", solution: "", work_status: "",
-    billing: "include_contract", photo_file_ids: [],
+    billing: "include_contract", photo_file_ids: [], customer_email: "",
     signatures: { customer: {}, issuer: {}, checker: {}, approver: {} },
   });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -83,6 +83,7 @@ export default function NewECR() {
           <Fld label="Site Name" v={f.site_name} on={(v) => set("site_name", v)} t="site_name" />
           <Fld label="Technician" v={f.technician} on={(v) => set("technician", v)} t="technician" />
           <Fld label="Unit No" v={f.unit_no} on={(v) => set("unit_no", v)} t="unit_no" placeholder="AS201" />
+          <Fld label="Email Customer (opsional)" v={f.customer_email} on={(v) => set("customer_email", v)} t="customer_email" />
           <Fld label="Tanggal" type="date" v={f.report_date} on={(v) => set("report_date", v)} t="report_date" />
           <div className="grid grid-cols-2 gap-2">
             <Fld label="Mulai" type="time" v={f.time_from} on={(v) => set("time_from", v)} t="time_from" />

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "@/lib/api";
+import api, { downloadExcel } from "@/lib/api";
 import { STATUSES } from "@/lib/meta";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { MagnifyingGlass, PhoneCall, HandArrowDown, FileText } from "@phosphor-icons/react";
+import { Button } from "@/components/ui/button";
+import { MagnifyingGlass, PhoneCall, HandArrowDown, FileText, DownloadSimple } from "@phosphor-icons/react";
 
 const TYPE_META = {
   ECR: { label: "ECR · Call Back", icon: PhoneCall, color: "bg-amber-100 text-amber-700" },
@@ -26,9 +27,12 @@ export default function ReportsList() {
 
   return (
     <div className="space-y-5" data-testid="reports-list">
-      <div>
-        <p className="overline text-accent">Historical Database</p>
-        <h1 className="font-head text-2xl font-extrabold tracking-tight text-primary">Laporan ECR & HOR</h1>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="overline text-accent">Historical Database</p>
+          <h1 className="font-head text-2xl font-extrabold tracking-tight text-primary">Laporan ECR & HOR</h1>
+        </div>
+        <Button variant="outline" onClick={downloadExcel} data-testid="reports-export-excel"><DownloadSimple size={16} className="mr-1.5" /> Ekspor Excel</Button>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">

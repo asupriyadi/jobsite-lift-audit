@@ -222,9 +222,11 @@ def test_pdf_with_photo_attachment_larger():
     assert r_no.status_code == 200, r_no.text
     id_no = r_no.json()["id"]
 
-    # 4) Compare PDF sizes
-    pdf_with = requests.get(f"{API}/inspections/{id_with}/pdf", timeout=60)
-    pdf_no = requests.get(f"{API}/inspections/{id_no}/pdf", timeout=60)
+    # 4) Compare PDF sizes (PDF endpoints now require ?auth=<token>)
+    _tw = requests.get(f"{API}/inspections/{id_with}/pdf-token", headers=_h("technician"), timeout=30).json()["token"]
+    _tn = requests.get(f"{API}/inspections/{id_no}/pdf-token", headers=_h("technician"), timeout=30).json()["token"]
+    pdf_with = requests.get(f"{API}/inspections/{id_with}/pdf?auth={_tw}", timeout=60)
+    pdf_no = requests.get(f"{API}/inspections/{id_no}/pdf?auth={_tn}", timeout=60)
     assert pdf_with.status_code == 200 and pdf_no.status_code == 200
     assert pdf_with.headers["content-type"].startswith("application/pdf")
     assert pdf_with.content[:4] == b"%PDF"

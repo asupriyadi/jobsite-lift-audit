@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "@/lib/api";
+import api, { downloadExcel } from "@/lib/api";
 import { STATUSES, CHECKLIST_TYPES } from "@/lib/meta";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { MagnifyingGlass, ClipboardText } from "@phosphor-icons/react";
+import { Button } from "@/components/ui/button";
+import { MagnifyingGlass, ClipboardText, DownloadSimple } from "@phosphor-icons/react";
 
 export default function InspectionList() {
   const navigate = useNavigate();
@@ -12,29 +13,42 @@ export default function InspectionList() {
   const [q, setQ] = useState("");
   const [type, setType] = useState("");
   const [status, setStatus] = useState("");
+  const [site, setSite] = useState("");
+  const [sites, setSites] = useState([]);
+
+  useEffect(() => { api.get("/inspections/sites").then((r) => setSites(r.data)).catch(() => {}); }, []);
 
   const load = () => {
     const params = new URLSearchParams();
     if (q) params.append("q", q);
     if (type) params.append("checklist_type", type);
     if (status) params.append("status", status);
+    if (site) params.append("site_name", site);
     api.get(`/inspections?${params}`).then((r) => setRows(r.data)).catch(() => {});
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [q, type, status]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [q, type, status, site]);
 
   return (
     <div className="space-y-5" data-testid="inspection-list">
-      <div>
-        <p className="overline text-accent">Historical Database</p>
-        <h1 className="font-head text-2xl font-extrabold tracking-tight text-primary">Riwayat Laporan SIR</h1>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="overline text-accent">Historical Database</p>
+          <h1 className="font-head text-2xl font-extrabold tracking-tight text-primary">Riwayat Laporan SIR</h1>
+        </div>
+        <Button variant="outline" onClick={downloadExcel} data-testid="export-excel"><DownloadSimple size={16} className="mr-1.5" /> Ekspor Excel</Button>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <div className="relative flex-1">
           <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} data-testid="search-input"
             placeholder="Cari job number, site, lift…" className="pl-9" />
         </div>
+        <select value={site} onChange={(e) => setSite(e.target.value)} data-testid="filter-building"
+          className="h-10 rounded-md border border-input bg-white px-3 text-sm">
+          <option value="">Semua Gedung</option>
+          {sites.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
         <select value={type} onChange={(e) => setType(e.target.value)} data-testid="filter-type"
           className="h-10 rounded-md border border-input bg-white px-3 text-sm">
           <option value="">Semua Jenis</option>

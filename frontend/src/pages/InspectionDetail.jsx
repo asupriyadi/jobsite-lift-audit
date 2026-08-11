@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api, { fileUrl, pdfUrl } from "@/lib/api";
+import api, { fileUrl, openInspectionPdf } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { STATUSES, judgmentByKey, SPARE_FIELDS, spareOptionMeta } from "@/lib/meta";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import ReportWorkflow from "@/components/ReportWorkflow";
+import PhotoUpload from "@/components/PhotoUpload";
 import {
   FilePdf, ArrowLeft, Trash, PencilSimple,
 } from "@phosphor-icons/react";
@@ -88,7 +89,7 @@ export default function InspectionDetail() {
           <p className="text-sm text-muted-foreground">{insp.job_number} · Lift {insp.lift_number}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.open(pdfUrl(id), "_blank")} data-testid="export-pdf">
+          <Button variant="outline" onClick={() => openInspectionPdf(id)} data-testid="export-pdf">
             <FilePdf size={16} className="mr-1.5" /> Export PDF
           </Button>
           {insp.status === "draft" && (user.id === insp.technician_id || user.role === "admin") && (
@@ -205,6 +206,20 @@ export default function InspectionDetail() {
                       </div>
                     );
                   })}
+                </div>
+                <div className="mt-3 flex items-center gap-3 border-t border-border pt-3">
+                  <div>
+                    <p className="overline mb-1 text-muted-foreground">Foto Setelah Penggantian</p>
+                    {(user.role === "technician" || user.role === "troubleshooter" || user.role === "supervisor" || user.role === "head_maintenance" || user.role === "admin") ? (
+                      <PhotoUpload testid={`spare-after-${sp.id}`} fileId={sp.after_photo_file_id}
+                        onChange={(fid) => updateSpare(sp.id, "after_photo_file_id", fid || "")} />
+                    ) : sp.after_photo_file_id ? (
+                      <img src={fileUrl(sp.after_photo_file_id)} alt="" className="h-16 w-16 rounded-md border border-border object-cover" />
+                    ) : <span className="text-[11px] text-slate-400">Belum ada</span>}
+                  </div>
+                  {sp.maintenance_status === "replaced" && (
+                    <span className="rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">Bukti pemasangan</span>
+                  )}
                 </div>
               </div>
             ))}
