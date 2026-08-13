@@ -1,6 +1,7 @@
 {
   "name": "frontend",
   "version": "0.1.0",
+  "homepage": "https://asupriyadi.github.io/jobsite-lift-audit",
   "private": true,
   "dependencies": {
     "@hookform/resolvers": "5.0.1",
