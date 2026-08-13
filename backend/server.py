@@ -32,7 +32,7 @@ from email_service import send_email, spare_change_html, daily_summary_html, app
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.getenv('MONGO_URL', 'mongodb+srv://agussupriyadi_db_user:hMWD6WLIndqiecK2@cluster0.oe06guo.mongodb.net/?appName=Cluster0')
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
