@@ -1,6 +1,13 @@
 import axios from "axios";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+// Ambil URL dari .env (Vite / CRA) atau gunakan fallback langsung ke Render backend
+const BACKEND_URL =
+  import.meta.env?.VITE_API_URL ||
+  process.env.REACT_APP_BACKEND_URL ||
+  process.env.REACT_APP_API_URL ||
+  "https://fujitec-sir-backend.onrender.com";
+
+const API = `${BACKEND_URL.replace(/\/$/, "")}/api`;
 
 export const api = axios.create({ baseURL: API });
 
