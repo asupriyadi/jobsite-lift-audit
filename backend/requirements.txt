@@ -12,3 +12,4 @@ PyJWT
 httpx
 APScheduler
 motor
+reportlab
