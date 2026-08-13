@@ -93,7 +93,7 @@ function App() {
   return (
     <AuthProvider>
       <Toaster position="top-center" richColors />
-      <BrowserRouter>
+      <BrowserRouter basename="/jobsite-lift-audit">
         <RootRoutes />
       </BrowserRouter>
     </AuthProvider>
