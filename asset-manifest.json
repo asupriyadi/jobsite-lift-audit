@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/jobsite-lift-audit/static/css/main.903bd6cf.css",
-    "main.js": "/jobsite-lift-audit/static/js/main.de955283.js",
+    "main.js": "/jobsite-lift-audit/static/js/main.0a8bda34.js",
     "index.html": "/jobsite-lift-audit/index.html",
     "main.903bd6cf.css.map": "/jobsite-lift-audit/static/css/main.903bd6cf.css.map",
-    "main.de955283.js.map": "/jobsite-lift-audit/static/js/main.de955283.js.map"
+    "main.0a8bda34.js.map": "/jobsite-lift-audit/static/js/main.0a8bda34.js.map"
   },
   "entrypoints": [
     "static/css/main.903bd6cf.css",
-    "static/js/main.de955283.js"
+    "static/js/main.0a8bda34.js"
   ]
 }
