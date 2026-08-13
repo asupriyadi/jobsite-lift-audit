@@ -1061,10 +1061,12 @@ async def startup():
     await seed_users()
     await load_buildings()
     try:
-        init_storage()
-        logger.info("Storage initialized")
+        # init_storage()
+        pass
+        # logger.info("Storage initialized")
     except Exception as e:
-        logger.error(f"Storage init failed: {e}")
+        # logger.error(f"Storage init failed: {e}")
+        logger.warning(f"Storage init skipped: {e}")
     try:
         scheduler.add_job(send_daily_summary, "cron", hour=7, minute=0, id="daily_summary", replace_existing=True)
         if not scheduler.running:
