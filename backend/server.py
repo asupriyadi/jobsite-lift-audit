@@ -29,6 +29,10 @@ from checklist_data import get_checklist, SECTIONS
 from pdf_report import build_sir_pdf, build_ecr_pdf, build_hor_pdf, std_filename
 from email_service import send_email, spare_change_html, daily_summary_html, approval_html
 
+# tambahan untuk upload foto mulai disini
+from fastapi.responses import FileResponse
+# tambahan untuk upload foto sampai disini
+
 # ---------------------------------------------------------------------------
 # Setup
 # ---------------------------------------------------------------------------
@@ -81,23 +85,58 @@ def init_storage():
     storage_key = resp.json()["storage_key"]
     return storage_key
 
+# diganti dari sini ----
+# def put_object(path: str, data: bytes, content_type: str) -> dict:
+#    key = init_storage()
+#    resp = requests.put(f"{STORAGE_URL}/objects/{path}",
+#                        headers={"X-Storage-Key": key, "Content-Type": content_type},
+#                        data=data, timeout=120)
+#    resp.raise_for_status()
+#    return resp.json()
+#
+# def get_object(path: str):
+#    key = init_storage()
+#    resp = requests.get(f"{STORAGE_URL}/objects/{path}",
+#                        headers={"X-Storage-Key": key}, timeout=60)
+#    resp.raise_for_status()
+#    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+#
+# diganti sampai sini -----
 
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
-    resp = requests.put(f"{STORAGE_URL}/objects/{path}",
-                        headers={"X-Storage-Key": key, "Content-Type": content_type},
-                        data=data, timeout=120)
-    resp.raise_for_status()
-    return resp.json()
+# pengganti dari sini -----
+# Folder lokal untuk menampung foto upload di server
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+def put_object(path: str, data: bytes, content_type: str = "image/jpeg"):
+    """Menyimpan file foto ke disk lokal server alih-alih EmergentAgent"""
+    try:
+        # Buat nama file aman dari path
+        safe_filename = path.replace("/", "_")
+        filepath = os.path.join(UPLOAD_DIR, safe_filename)
+        
+        with open(filepath, "wb") as f:
+            f.write(data)
+            
+        # Kembalikan URL publik / identifier file
+        return {
+            "path": path,
+            "url": f"/api/files/{safe_filename}",
+            "filename": safe_filename
+        }
+    except Exception as e:
+        print(f"Error saving file locally: {e}")
+        raise e
 
 def get_object(path: str):
-    key = init_storage()
-    resp = requests.get(f"{STORAGE_URL}/objects/{path}",
-                        headers={"X-Storage-Key": key}, timeout=60)
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
-
+    """Membaca file foto dari disk lokal server"""
+    safe_filename = path.replace("/", "_")
+    filepath = os.path.join(UPLOAD_DIR, safe_filename)
+    if os.path.exists(filepath):
+        with open(filepath, "rb") as f:
+            return f.read()
+    return None
+# pengganti sampai sini -----
 
 # ---------------------------------------------------------------------------
 # Auth utilities
@@ -422,6 +461,14 @@ async def download_file(file_id: str, auth: str = Query(None), authorization: st
     data, ctype = get_object(record["storage_path"])
     return Response(content=data, media_type=record.get("content_type", ctype))
 
+# tambahan upload foto mulai disini
+@app.get("/api/files/{filename}")
+async def get_uploaded_file(filename: str):
+    filepath = os.path.join(UPLOAD_DIR, filename)
+    if os.path.exists(filepath):
+        return FileResponse(filepath)
+    return {"error": "File not found"}, 404
+# tambahan upload foto sampai disini
 
 # ---------------------------------------------------------------------------
 # Inspections
