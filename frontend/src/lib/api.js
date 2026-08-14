@@ -17,7 +17,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export const fileUrl = (fileId) => `${API}/files/${fileId}`;
+export const fileUrl = (fileId) => {
+  if (!fileId) return "";
+  if (fileId.startsWith("http://") || fileId.startsWith("https://")) return fileId;
+  return `${API}/files/${fileId}`;
+};
+
 export const pdfUrl = (id) => `${API}/inspections/${id}/pdf`;
 
 export async function openInspectionPdf(id) {

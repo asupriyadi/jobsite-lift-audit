@@ -455,14 +455,22 @@ async def upload(file: UploadFile = File(...), user: dict = Depends(get_current_
     return {"file_id": file_id, "path": result["url"]}
 
 @api_router.get("/files/{file_id}")
-async def download_file(file_id: str, auth: str = Query(None), authorization: str = Header(None)):
+async def download_file(file_id: str):
+    # Cari berdasarkan ID file di DB
     record = await db.files.find_one({"id": file_id, "is_deleted": False})
-    if not record:
-        raise HTTPException(status_code=404, detail="File not found")
     
-    data = get_object(record["storage_path"])
-    if data is None:
-        raise HTTPException(status_code=404, detail="File content not found")
+    if record:
+        safe_filename = record.get("storage_path", "").split("/")[-1]
+        filepath = os.path.join(UPLOAD_DIR, safe_filename)
+        if os.path.exists(filepath):
+            return FileResponse(filepath, media_type=record.get("content_type", "image/jpeg"))
+            
+    # Fallback jika dicari berdasarkan nama file langsung di folder uploads
+    filepath = os.path.join(UPLOAD_DIR, file_id)
+    if os.path.exists(filepath):
+        return FileResponse(filepath, media_type="image/jpeg")
+
+    raise HTTPException(status_code=404, detail="File not found")
         
     return Response(content=data, media_type=record.get("content_type", "image/jpeg"))
 
