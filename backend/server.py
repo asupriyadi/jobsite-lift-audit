@@ -436,30 +436,35 @@ async def lookup_building(job_number: str = Query(...), user: dict = Depends(get
 async def upload(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     ext = (file.filename.split(".")[-1] if "." in file.filename else "bin").lower()
     file_id = str(uuid.uuid4())
-    path = f"{APP_NAME}/uploads/{user['id']}/{file_id}.{ext}"
+    path = f"{file_id}.{ext}"
     data = await file.read()
     ctype = file.content_type or MIME_TYPES.get(ext, "application/octet-stream")
+    
     result = put_object(path, data, ctype)
+    
     await db.files.insert_one({
         "id": file_id,
-        "storage_path": result["path"],
+        "storage_path": result["filename"],
         "original_filename": file.filename,
         "content_type": ctype,
-        "size": result.get("size", len(data)),
+        "size": len(data),
         "uploaded_by": user["id"],
         "is_deleted": False,
         "created_at": now_iso(),
     })
-    return {"file_id": file_id, "path": result["path"]}
-
+    return {"file_id": file_id, "path": result["url"]}
 
 @api_router.get("/files/{file_id}")
 async def download_file(file_id: str, auth: str = Query(None), authorization: str = Header(None)):
     record = await db.files.find_one({"id": file_id, "is_deleted": False})
     if not record:
         raise HTTPException(status_code=404, detail="File not found")
-    data, ctype = get_object(record["storage_path"])
-    return Response(content=data, media_type=record.get("content_type", ctype))
+    
+    data = get_object(record["storage_path"])
+    if data is None:
+        raise HTTPException(status_code=404, detail="File content not found")
+        
+    return Response(content=data, media_type=record.get("content_type", "image/jpeg"))
 
 # tambahan upload foto mulai disini
 @app.get("/api/files/{filename}")
