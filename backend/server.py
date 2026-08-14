@@ -474,14 +474,7 @@ async def download_file(file_id: str):
         
     return Response(content=data, media_type=record.get("content_type", "image/jpeg"))
 
-# tambahan upload foto mulai disini
-@app.get("/api/files/{filename}")
-async def get_uploaded_file(filename: str):
-    filepath = os.path.join(UPLOAD_DIR, filename)
-    if os.path.exists(filepath):
-        return FileResponse(filepath)
-    return {"error": "File not found"}, 404
-# tambahan upload foto sampai disini
+# changes dummy changes ini= this line
 
 # ---------------------------------------------------------------------------
 # Inspections
