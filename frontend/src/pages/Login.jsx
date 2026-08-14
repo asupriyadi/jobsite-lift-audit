@@ -44,8 +44,8 @@ export default function Login() {
   };
 
   const googleLogin = () => {
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    const redirectUrl = window.location.origin + "/";
+    // Tambahkan sub-path repositori GitHub Pages Anda agar redirect tepat sasaran
+    const redirectUrl = window.location.origin + "/jobsite-lift-audit/";
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
